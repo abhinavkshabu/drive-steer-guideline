@@ -312,6 +312,98 @@
     .drawer-btn:hover {
       background: rgba(0, 240, 255, .25)
     }
+
+    /* ── Forced Landscape Mode (for devices with portrait lock) ── */
+    body.forced-landscape {
+      transform: rotate(90deg);
+      transform-origin: top left;
+      position: fixed;
+      top: 0;
+      left: 100vw;
+      width: 100vh;
+      height: 100vw;
+      overflow: hidden;
+    }
+
+    /* ── Rotate Hint ── */
+    #rotate-hint {
+      position: fixed;
+      bottom: 54px;
+      left: 50%;
+      transform: translateX(-50%);
+      font-family: 'Orbitron', sans-serif;
+      font-size: 9.5px;
+      letter-spacing: 2px;
+      color: #00f0ff;
+      background: rgba(0, 240, 255, .12);
+      border: 1px solid rgba(0, 240, 255, .35);
+      padding: 6px 16px;
+      border-radius: 20px;
+      pointer-events: none;
+      z-index: 28;
+      backdrop-filter: blur(8px);
+      display: none;
+      animation: pulseHint 2s infinite;
+      white-space: nowrap;
+    }
+
+    @media (orientation: portrait) {
+      body:not(.forced-landscape) #rotate-hint {
+        display: block;
+      }
+    }
+
+    @keyframes pulseHint {
+      0%, 100% { opacity: 0.95; }
+      50% { opacity: 0.35; }
+    }
+
+    /* ── Horizontal / Landscape Optimization ── */
+    @media (orientation: landscape), (max-height: 520px) {
+      .top-bar {
+        top: 8px;
+        left: 12px;
+        right: 12px;
+      }
+      .brand-title {
+        font-size: 10px;
+        letter-spacing: 2.5px;
+      }
+      .badge-mode {
+        font-size: 8px;
+        padding: 1px 5px;
+      }
+      .controls-group {
+        gap: 6px;
+      }
+      .hud-btn {
+        font-size: 8px;
+        padding: 4px 8px;
+        letter-spacing: 1px;
+      }
+      #telemetry {
+        bottom: 8px;
+        gap: 28px;
+        font-size: 9.5px;
+      }
+      .tel-val {
+        font-size: 13.5px;
+      }
+      #hazard-banner {
+        top: 38px;
+        font-size: 11px;
+        padding: 3px 14px;
+      }
+      #conn-drawer {
+        top: 38px;
+        right: 10px;
+        max-height: 88vh;
+        overflow-y: auto;
+        padding: 10px;
+        gap: 8px;
+        width: 250px;
+      }
+    }
   </style>
 </head>
 
@@ -319,6 +411,7 @@
 
   <canvas id="c"></canvas>
   <div id="hazard-overlay"></div>
+  <div id="rotate-hint">↻ ROTATE HORIZONTALLY FOR DASHBOARD HUD</div>
 
   <!-- Top Navigation & Controls -->
   <div class="top-bar">
@@ -330,6 +423,7 @@
     <div class="controls-group">
       <a href="index.html" class="hud-btn" style="text-decoration:none;display:inline-flex;align-items:center;"
         title="Return to Launch Hub">HUB</a>
+      <button class="hud-btn" id="btn-rotate" title="Force Horizontal Orientation (Shortcut: R)">HORIZONTAL</button>
       <button class="hud-btn" id="btn-mirror" title="Toggle Windshield Projection Mirroring (Shortcut: M)">HUD MIRROR:
         OFF</button>
       <button class="hud-btn" id="btn-serial" title="Connect Arduino via USB Serial">SERIAL</button>
@@ -430,13 +524,14 @@
       let FX = 0, FY = 0;
 
       function updateProjection() {
-        // Horizon sits at 36% from top (driver looking slightly forward/down)
-        HORIZON_Y = H * 0.36;
+        const isWide = W > H;
+        // In landscape widescreen, horizon at 40% height gives optimal panoramic road perspective
+        HORIZON_Y = isWide ? H * 0.40 : H * 0.36;
 
-        // Ground point at hood start (NEAR_S) projects near 92% screen height
         const camZNear = CAM_BEHIND_HOOD + NEAR_S;
-        FY = (H * 0.92 - HORIZON_Y) * camZNear / CAM_HEIGHT;
-        FX = FY * 1.15; // wide-angle FOV tailored for automotive HUD aperture
+        FY = (H * 0.93 - HORIZON_Y) * camZNear / CAM_HEIGHT;
+        // In landscape, widen horizontal focal length FX so curves fan out across the wide horizontal screen
+        FX = isWide ? FY * 1.55 : FY * 1.15;
 
         // Position horizon reticle
         const ret = document.getElementById('reticle');
@@ -445,14 +540,24 @@
 
       function resize() {
         dpr = window.devicePixelRatio || 1;
-        W = window.innerWidth;
-        H = window.innerHeight;
+        const isForced = document.body.classList.contains('forced-landscape');
+        if (isForced) {
+          W = window.innerHeight;
+          H = window.innerWidth;
+        } else {
+          W = window.innerWidth;
+          H = window.innerHeight;
+        }
         canvas.width = W * dpr;
         canvas.height = H * dpr;
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
         updateProjection();
       }
       window.addEventListener('resize', resize);
+      window.addEventListener('orientationchange', () => {
+        setTimeout(resize, 100);
+        setTimeout(resize, 300);
+      });
       resize();
 
       /* ── 3D Ground Point → 2D Screen Perspective ── */
@@ -482,16 +587,47 @@
       }
 
       /* ════════════════════════════════════════════════════════════════════════
-       * 3. STATE & DATA BUS
+       * 3. STATE & DAMPING ENGINE (SECOND-ORDER CRITICALLY DAMPED INTERPOLATION)
        * ════════════════════════════════════════════════════════════════════════ */
-      let steerAngle = 0.0;    // degrees: -45 to +45
-      let distanceCm = 999.0;  // cm: ultrasonic obstacle distance
+      let targetSteerAngle = 0.0; // degrees: -45.0 to +45.0
+      let targetDistanceCm = 999.0;
+      let steerAngle = 0.0;       // instantaneous smoothed angle
+      let distanceCm = 999.0;     // instantaneous smoothed distance
       let isHazard = false;
       let isLive = false;
-      let isMirrored = false;  // Windshield projection reflection mode
+      let isMirrored = false;
 
       let smoothAngle = 0.0;
-      let smoothHazard = 0.0;    // 0 = normal cyan/white, 1 = warning amber
+      let smoothDistance = 999.0;
+      let smoothHazard = 0.0;
+      const angleVelocity = { val: 0.0 };
+      const distVelocity = { val: 0.0 };
+      let lastFrameTime = performance.now();
+
+      // Unity/Game-engine grade SmoothDamp (spring-damper interpolation)
+      // Provides buttery smooth acceleration and deceleration over network latency spikes
+      function smoothDamp(current, target, currentVelocity, smoothTime, maxSpeed, deltaTime) {
+        smoothTime = Math.max(0.0001, smoothTime);
+        const omega = 2 / smoothTime;
+        const x = omega * deltaTime;
+        const exp = 1 / (1 + x + 0.48 * x * x + 0.235 * x * x * x);
+        let change = current - target;
+        const originalTo = target;
+
+        const maxChange = maxSpeed * smoothTime;
+        change = Math.max(-maxChange, Math.min(maxChange, change));
+        target = current - change;
+
+        const temp = (currentVelocity.val + omega * change) * deltaTime;
+        currentVelocity.val = (currentVelocity.val - omega * temp) * exp;
+        let output = target + (change + temp) * exp;
+
+        if ((originalTo - current > 0) === (output > originalTo)) {
+          output = originalTo;
+          currentVelocity.val = 0;
+        }
+        return output;
+      }
 
       /* ── Local BroadcastChannel (Same Device / Browser Tabs) ── */
       let bc;
@@ -500,8 +636,8 @@
         bc.onmessage = (e) => {
           const d = e.data;
           if (d && typeof d.angle === 'number') {
-            steerAngle = d.angle;
-            if (typeof d.distance === 'number') distanceCm = d.distance;
+            targetSteerAngle = d.angle;
+            if (typeof d.distance === 'number') targetDistanceCm = d.distance;
             onReceiveLiveData('BROADCAST');
           }
         };
@@ -543,8 +679,8 @@
             try {
               const d = JSON.parse(msg.toString());
               if (d && typeof d.angle === 'number') {
-                steerAngle = d.angle;
-                if (typeof d.distance === 'number') distanceCm = d.distance;
+                targetSteerAngle = d.angle;
+                if (typeof d.distance === 'number') targetDistanceCm = d.distance;
                 onReceiveLiveData('WIRELESS');
               }
             } catch (_) { }
@@ -589,8 +725,8 @@
               if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
                 try {
                   const data = JSON.parse(trimmed);
-                  if (typeof data.angle === 'number') steerAngle = data.angle;
-                  if (typeof data.distance === 'number') distanceCm = data.distance;
+                  if (typeof data.angle === 'number') targetSteerAngle = data.angle;
+                  if (typeof data.distance === 'number') targetDistanceCm = data.distance;
                   onReceiveLiveData('SERIAL');
                 } catch (_) { }
               }
@@ -635,7 +771,7 @@
       }
 
       /* ════════════════════════════════════════════════════════════════════════
-       * 4. HUD PROJECTION MIRRORING & UI CONTROLS
+       * 4. HUD PROJECTION MIRRORING & ORIENTATION CONTROLS
        * ════════════════════════════════════════════════════════════════════════ */
       const btnMirror = document.getElementById('btn-mirror');
       function toggleMirror() {
@@ -646,10 +782,41 @@
       }
       btnMirror.addEventListener('click', toggleMirror);
 
+      const btnRotate = document.getElementById('btn-rotate');
+      async function toggleRotate() {
+        const isForced = document.body.classList.toggle('forced-landscape');
+        if (btnRotate) {
+          btnRotate.classList.toggle('active', isForced);
+          btnRotate.textContent = isForced ? 'ROTATE: 90°' : 'HORIZONTAL';
+        }
+        if (isForced) {
+          try {
+            if (document.documentElement.requestFullscreen) {
+              await document.documentElement.requestFullscreen();
+            }
+            if (screen.orientation && screen.orientation.lock) {
+              await screen.orientation.lock('landscape');
+            }
+          } catch (_) {}
+        } else {
+          try {
+            if (screen.orientation && screen.orientation.unlock) {
+              screen.orientation.unlock();
+            }
+            if (document.exitFullscreen && document.fullscreenElement) {
+              await document.exitFullscreen();
+            }
+          } catch (_) {}
+        }
+        setTimeout(resize, 80);
+        setTimeout(resize, 260);
+      }
+      if (btnRotate) btnRotate.addEventListener('click', toggleRotate);
+
       function broadcastSteer() {
         if (bc) {
           try {
-            bc.postMessage({ angle: Number(steerAngle.toFixed(1)), distance: distanceCm });
+            bc.postMessage({ angle: Number(targetSteerAngle.toFixed(1)), distance: targetDistanceCm });
           } catch (_) { }
         }
       }
@@ -660,16 +827,20 @@
           toggleMirror();
           return;
         }
+        if (e.key === 'r' || e.key === 'R') {
+          toggleRotate();
+          return;
+        }
         if (e.key === 'ArrowLeft' || e.key === 'a' || e.key === 'A') {
-          steerAngle = Math.max(-45, steerAngle - (e.shiftKey ? 5.0 : 2.0));
+          targetSteerAngle = Math.max(-45, targetSteerAngle - (e.shiftKey ? 5.0 : 2.0));
           onReceiveLiveData('MANUAL');
           broadcastSteer();
         } else if (e.key === 'ArrowRight' || e.key === 'd' || e.key === 'D') {
-          steerAngle = Math.min(45, steerAngle + (e.shiftKey ? 5.0 : 2.0));
+          targetSteerAngle = Math.min(45, targetSteerAngle + (e.shiftKey ? 5.0 : 2.0));
           onReceiveLiveData('MANUAL');
           broadcastSteer();
         } else if (e.key === ' ' || e.key === '0' || e.key === 'c' || e.key === 'C') {
-          steerAngle = 0.0;
+          targetSteerAngle = 0.0;
           onReceiveLiveData('MANUAL');
           broadcastSteer();
         }
@@ -677,27 +848,30 @@
 
       let isDraggingHUD = false;
       canvas.addEventListener('pointerdown', (e) => {
-        if (e.clientY > H * 0.25) {
+        if (e.clientY > H * 0.22) {
           isDraggingHUD = true;
           canvas.setPointerCapture(e.pointerId);
-          handlePointerSteer(e.clientX);
+          handlePointerSteer(e.clientX, e.clientY);
         }
       });
       canvas.addEventListener('pointermove', (e) => {
-        if (isDraggingHUD) handlePointerSteer(e.clientX);
+        if (isDraggingHUD) handlePointerSteer(e.clientX, e.clientY);
       });
       function endDrag() { isDraggingHUD = false; }
       canvas.addEventListener('pointerup', endDrag);
       canvas.addEventListener('pointercancel', endDrag);
       canvas.addEventListener('dblclick', () => {
-        steerAngle = 0.0;
+        targetSteerAngle = 0.0;
         onReceiveLiveData('MANUAL');
         broadcastSteer();
       });
 
-      function handlePointerSteer(clientX) {
-        const ratio = (clientX / W) * 2 - 1; // -1 to +1
-        steerAngle = Math.max(-45, Math.min(45, ratio * 45));
+      function handlePointerSteer(clientX, clientY) {
+        let x = clientX;
+        const isForced = document.body.classList.contains('forced-landscape');
+        if (isForced) x = clientY;
+        const ratio = (x / W) * 2 - 1; // -1 to +1
+        targetSteerAngle = Math.max(-45, Math.min(45, ratio * 45));
         onReceiveLiveData('MANUAL');
         broadcastSteer();
       }
@@ -854,22 +1028,93 @@
         }
       }
 
+      /* ── Dynamic Horizon Steering Compass Tape ── */
+      function drawHorizonSteeringCompass(steerDeg, col) {
+        ctx.save();
+        const centerX = W / 2;
+        const y = HORIZON_Y;
+        const pxPerDeg = Math.min(W * 0.012, 10.5);
+
+        // Subtle horizon baseline
+        ctx.beginPath();
+        ctx.moveTo(centerX - W * 0.32, y);
+        ctx.lineTo(centerX + W * 0.32, y);
+        ctx.strokeStyle = rgba(col, 0.15);
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.font = '9px "Share Tech Mono", monospace';
+
+        // Ticks from -40° to +40°
+        for (let deg = -40; deg <= 40; deg += 5) {
+          const tickX = centerX + (deg - steerDeg) * pxPerDeg;
+          if (tickX < centerX - W * 0.34 || tickX > centerX + W * 0.34) continue;
+
+          const isMajor = deg % 10 === 0;
+          const tickLen = isMajor ? 7 : 3.5;
+          const distNorm = Math.abs(tickX - centerX) / (W * 0.34);
+          const alpha = (1 - distNorm * distNorm) * (isMajor ? 0.65 : 0.22);
+
+          ctx.beginPath();
+          ctx.moveTo(tickX, y - tickLen);
+          ctx.lineTo(tickX, y);
+          ctx.strokeStyle = rgba(col, alpha);
+          ctx.lineWidth = isMajor ? 1.4 : 0.8;
+          ctx.stroke();
+
+          if (isMajor && deg !== 0) {
+            ctx.fillStyle = rgba(col, alpha * 0.85);
+            ctx.fillText(`${Math.abs(deg)}°`, tickX, y - tickLen - 2);
+          }
+        }
+
+        // Center reticle reference indicator
+        ctx.fillStyle = rgba(col, 0.95);
+        ctx.beginPath();
+        ctx.moveTo(centerX, y - 6);
+        ctx.lineTo(centerX + 3.5, y);
+        ctx.lineTo(centerX, y + 6);
+        ctx.lineTo(centerX - 3.5, y);
+        ctx.closePath();
+        ctx.fill();
+
+        ctx.restore();
+      }
+
       /* ════════════════════════════════════════════════════════════════════════
-       * 6. MAIN RENDER LOOP (GUIDELINE RESPONDS TO STEER)
+       * 6. MAIN RENDER LOOP (BUTTER-SMOOTH ROTATION & KINEMATICS)
        * ════════════════════════════════════════════════════════════════════════ */
       function render(timestamp) {
         requestAnimationFrame(render);
 
+        // High-precision frame delta time calculation (capped to prevent leaps after tab backgrounding)
+        const now = performance.now();
+        const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameTime) / 1000));
+        lastFrameTime = now;
+
         // Check timeout for external live feed
         checkSourceTimeout(timestamp);
 
-        // Responsive tracking: guidelines strictly follow steering input
-        smoothAngle += (steerAngle - smoothAngle) * 0.25;
-        if (Math.abs(steerAngle - smoothAngle) < 0.02) smoothAngle = steerAngle;
+        // Second-order critically damped smooth interpolation:
+        // SmoothTime = 0.11s produces silky smooth, continuous rotation even with 100-250ms packet latency!
+        smoothAngle = smoothDamp(smoothAngle, targetSteerAngle, angleVelocity, 0.11, 350, dt);
+        steerAngle = smoothAngle;
+
+        // Smooth obstacle distance damping
+        smoothDistance = smoothDamp(smoothDistance, targetDistanceCm, distVelocity, 0.15, 800, dt);
+        distanceCm = smoothDistance;
 
         const targetHazard = (distanceCm < HAZARD_THRESHOLD) ? 1.0 : 0.0;
-        smoothHazard += (targetHazard - smoothHazard) * 0.18;
+        smoothHazard += (targetHazard - smoothHazard) * Math.min(1.0, 10.0 * dt);
         isHazard = smoothHazard > 0.35;
+
+        // ── Smooth Horizon Reticle Banking ──
+        const ret = document.getElementById('reticle');
+        if (ret) {
+          ret.style.transform = `translate(-50%, -50%) rotate(${-smoothAngle * 0.22}deg)`;
+        }
 
         // ── Update DOM Telemetry ──
         const banner = document.getElementById('hazard-banner');
@@ -905,6 +1150,12 @@
         // ── Clear Frame ──
         ctx.clearRect(0, 0, W, H);
 
+        // Dynamic active palette
+        const activeColor = lerpCol(COLOR_NORMAL, COLOR_HAZARD, smoothHazard);
+
+        // ── 0. Draw Horizon Digital Steering Compass Tape ──
+        drawHorizonSteeringCompass(smoothAngle, activeColor);
+
         // ── Compute Geometry Lookahead ──
         const steerRad = smoothAngle * Math.PI / 180;
         const kappa = Math.abs(steerRad) > 0.0005 ? Math.tan(steerRad) / WHEELBASE : 0;
@@ -912,9 +1163,6 @@
 
         // Dynamically clamp lookahead arc distance so heading doesn't exceed visual FOV
         const maxLookahead = Math.min(FAR_S, Math.max(7.0, absR * MAX_HEADING_CHG));
-
-        // Dynamic active palette
-        const activeColor = lerpCol(COLOR_NORMAL, COLOR_HAZARD, smoothHazard);
 
         // ── 1. Draw Left & Right Primary Trajectory Guidelines ──
         const leftPts = buildProjectedLine(smoothAngle, -1, maxLookahead);
@@ -931,7 +1179,6 @@
             drawCrossbar(dM, smoothAngle, activeColor, rungAlpha, false);
           }
         }
-
 
         // ── 4. Dynamic Ultrasonic Obstacle Ground Barrier ──
         const obstacleMeters = distanceCm / 100.0;
