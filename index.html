@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>SpatialDrive — Dual-Screen AR HUD & Wireless Controller Hub</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+  html,body{
+    width:100%;min-height:100%;
+    background:#06080d;
+    font-family:'Share Tech Mono',monospace;
+    color:#e0e8f5;
+    -webkit-font-smoothing:antialiased;
+  }
+  body{
+    background:radial-gradient(ellipse at 50% 10%, #111a2e 0%, #06090e 65%, #030407 100%);
+    padding:24px 16px 40px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+  }
+
+  /* Cyber Grid Background lines */
+  .grid-bg{
+    position:fixed;top:0;left:0;right:0;bottom:0;
+    background-image:linear-gradient(rgba(0,240,255,0.03) 1px, transparent 1px),
+                     linear-gradient(90deg, rgba(0,240,255,0.03) 1px, transparent 1px);
+    background-size:36px 36px;
+    pointer-events:none;
+    z-index:0;
+  }
+
+  .container{
+    position:relative;
+    width:100%;
+    max-width:980px;
+    z-index:1;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:24px;
+  }
+
+  /* ── Header ── */
+  .header{
+    text-align:center;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:8px;
+    padding-top:10px;
+  }
+  .brand-badge{
+    font-family:'Orbitron',sans-serif;
+    font-size:10px;
+    letter-spacing:3px;
+    padding:3px 10px;
+    border-radius:4px;
+    background:rgba(0,240,255,0.08);
+    border:1px solid rgba(0,240,255,0.25);
+    color:#00f0ff;
+    text-transform:uppercase;
+  }
+  .title{
+    font-family:'Orbitron',sans-serif;
+    font-weight:900;
+    font-size:clamp(28px, 6vw, 46px);
+    letter-spacing:4px;
+    color:#fff;
+    text-shadow:0 0 24px rgba(0,240,255,0.45);
+  }
+  .title span{
+    color:#00f0ff;
+    text-shadow:0 0 30px rgba(0,240,255,0.8);
+  }
+  .subtitle{
+    font-size:clamp(12px, 2.5vw, 15px);
+    color:rgba(255,255,255,0.65);
+    max-width:620px;
+    line-height:1.5;
+    letter-spacing:0.5px;
+  }
+
+  /* Cloud Broker Status Pill */
+  .cloud-pill{
+    display:inline-flex;
+    align-items:center;
+    gap:8px;
+    padding:6px 14px;
+    border-radius:20px;
+    background:rgba(12,18,28,0.85);
+    border:1px solid rgba(0,240,255,0.2);
+    font-size:11px;
+    letter-spacing:1px;
+    margin-top:4px;
+  }
+  .pulse-dot{
+    width:8px;height:8px;border-radius:50%;
+    background:#00f0ff;
+    box-shadow:0 0 10px #00f0ff;
+    animation:pulse 1.8s infinite;
+  }
+  @keyframes pulse{
+    0%{opacity:1;transform:scale(1)}
+    50%{opacity:0.4;transform:scale(0.85)}
+    100%{opacity:1;transform:scale(1)}
+  }
+
+  /* ── Room Code Control Panel ── */
+  .room-panel{
+    width:100%;
+    max-width:680px;
+    background:rgba(12,18,28,0.7);
+    backdrop-filter:blur(14px);
+    border:1px solid rgba(0,240,255,0.22);
+    border-radius:12px;
+    padding:18px 22px;
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    box-shadow:0 10px 30px rgba(0,0,0,0.5);
+  }
+  .room-panel-header{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    flex-wrap:wrap;
+    gap:8px;
+  }
+  .panel-title{
+    font-family:'Orbitron',sans-serif;
+    font-size:12px;
+    letter-spacing:2px;
+    color:#00f0ff;
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .room-input-group{
+    display:flex;
+    gap:8px;
+    align-items:center;
+    flex-wrap:wrap;
+  }
+  .room-input{
+    flex:1;
+    min-width:180px;
+    background:rgba(255,255,255,0.05);
+    border:1px solid rgba(0,240,255,0.3);
+    border-radius:6px;
+    padding:10px 14px;
+    color:#fff;
+    font-family:'Orbitron',sans-serif;
+    font-weight:700;
+    font-size:15px;
+    letter-spacing:2px;
+    outline:none;
+    text-transform:uppercase;
+    transition:all 0.2s ease;
+  }
+  .room-input:focus{
+    border-color:#00f0ff;
+    box-shadow:0 0 12px rgba(0,240,255,0.35);
+    background:rgba(0,240,255,0.08);
+  }
+  .btn-random{
+    padding:10px 16px;
+    font-family:'Orbitron',sans-serif;
+    font-size:11px;
+    letter-spacing:1px;
+    background:rgba(0,240,255,0.12);
+    border:1px solid rgba(0,240,255,0.35);
+    color:#00f0ff;
+    border-radius:6px;
+    cursor:pointer;
+    transition:all 0.18s ease;
+    white-space:nowrap;
+  }
+  .btn-random:hover{
+    background:#00f0ff;
+    color:#06080d;
+    box-shadow:0 0 14px rgba(0,240,255,0.5);
+  }
+  .room-hint{
+    font-size:11px;
+    color:rgba(255,255,255,0.5);
+    line-height:1.4;
+  }
+
+  /* ── Split Device Cards ── */
+  .cards-grid{
+    width:100%;
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(320px, 1fr));
+    gap:20px;
+  }
+
+  .device-card{
+    background:rgba(12,18,28,0.78);
+    backdrop-filter:blur(14px);
+    border:1px solid rgba(255,255,255,0.1);
+    border-radius:14px;
+    padding:24px 20px;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    text-align:center;
+    gap:16px;
+    transition:all 0.25s ease;
+    position:relative;
+    overflow:hidden;
+  }
+  .device-card:hover{
+    border-color:rgba(0,240,255,0.4);
+    box-shadow:0 12px 36px rgba(0,240,255,0.12);
+    transform:translateY(-2px);
+  }
+  .device-card::before{
+    content:'';
+    position:absolute;
+    top:0;left:0;right:0;height:3px;
+    background:linear-gradient(90deg, transparent, #00f0ff, transparent);
+    opacity:0;
+    transition:opacity 0.25s ease;
+  }
+  .device-card:hover::before{
+    opacity:1;
+  }
+
+  .card-top{
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+  }
+  .card-pill{
+    font-family:'Orbitron',sans-serif;
+    font-size:9.5px;
+    letter-spacing:2px;
+    padding:3px 8px;
+    border-radius:4px;
+    background:rgba(255,255,255,0.06);
+    border:1px solid rgba(255,255,255,0.12);
+    color:rgba(255,255,255,0.7);
+  }
+  .card-pill.ctrl{
+    background:rgba(0,240,255,0.1);
+    border-color:rgba(0,240,255,0.3);
+    color:#00f0ff;
+  }
+  .card-pill.hud{
+    background:rgba(255,140,0,0.12);
+    border-color:rgba(255,140,0,0.35);
+    color:#FF9D00;
+  }
+
+  .card-title{
+    font-family:'Orbitron',sans-serif;
+    font-weight:800;
+    font-size:18px;
+    letter-spacing:2px;
+    color:#fff;
+  }
+  .card-desc{
+    font-size:11.5px;
+    color:rgba(255,255,255,0.55);
+    line-height:1.45;
+    min-height:34px;
+    max-width:320px;
+  }
+
+  /* QR Box */
+  .qr-wrapper{
+    width:190px;
+    height:190px;
+    padding:10px;
+    background:#fff;
+    border-radius:10px;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    box-shadow:0 8px 24px rgba(0,0,0,0.6);
+    position:relative;
+  }
+  .qr-wrapper img, .qr-wrapper canvas{
+    display:block;
+    max-width:100%;
+    height:auto;
+  }
+  .qr-caption{
+    font-size:10px;
+    letter-spacing:1px;
+    color:rgba(255,255,255,0.5);
+    margin-top:-6px;
+  }
+
+  /* Action Buttons */
+  .card-actions{
+    width:100%;
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+  }
+  .btn-primary{
+    width:100%;
+    padding:12px;
+    font-family:'Orbitron',sans-serif;
+    font-weight:700;
+    font-size:12px;
+    letter-spacing:1.5px;
+    border-radius:6px;
+    text-decoration:none;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    cursor:pointer;
+    transition:all 0.18s ease;
+  }
+  .btn-primary.ctrl-btn{
+    background:linear-gradient(135deg, #00f0ff 0%, #0099ff 100%);
+    color:#05080e;
+    box-shadow:0 4px 18px rgba(0,240,255,0.35);
+  }
+  .btn-primary.ctrl-btn:hover{
+    box-shadow:0 6px 24px rgba(0,240,255,0.6);
+    transform:scale(1.01);
+  }
+  .btn-primary.hud-btn{
+    background:linear-gradient(135deg, #FF9D00 0%, #FF5500 100%);
+    color:#05080e;
+    box-shadow:0 4px 18px rgba(255,140,0,0.35);
+  }
+  .btn-primary.hud-btn:hover{
+    box-shadow:0 6px 24px rgba(255,140,0,0.6);
+    transform:scale(1.01);
+  }
+
+  .btn-secondary{
+    width:100%;
+    padding:9px;
+    font-family:'Share Tech Mono',monospace;
+    font-size:11px;
+    letter-spacing:1px;
+    background:rgba(255,255,255,0.04);
+    border:1px solid rgba(255,255,255,0.14);
+    color:rgba(255,255,255,0.75);
+    border-radius:6px;
+    cursor:pointer;
+    transition:all 0.15s ease;
+  }
+  .btn-secondary:hover{
+    background:rgba(255,255,255,0.08);
+    border-color:rgba(255,255,255,0.3);
+    color:#fff;
+  }
+
+  /* ── Workflow Guide ── */
+  .workflow-section{
+    width:100%;
+    max-width:880px;
+    background:rgba(12,18,28,0.6);
+    border:1px solid rgba(255,255,255,0.08);
+    border-radius:12px;
+    padding:20px 24px;
+    display:flex;
+    flex-direction:column;
+    gap:16px;
+  }
+  .section-title{
+    font-family:'Orbitron',sans-serif;
+    font-size:13px;
+    letter-spacing:2px;
+    color:#00f0ff;
+  }
+  .steps-row{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+    gap:16px;
+  }
+  .step-box{
+    background:rgba(255,255,255,0.02);
+    border:1px solid rgba(255,255,255,0.06);
+    border-radius:8px;
+    padding:14px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .step-num{
+    font-family:'Orbitron',sans-serif;
+    font-weight:800;
+    font-size:11px;
+    color:#00f0ff;
+    letter-spacing:1px;
+  }
+  .step-head{
+    font-weight:700;
+    font-size:13px;
+    color:#fff;
+  }
+  .step-p{
+    font-size:11px;
+    color:rgba(255,255,255,0.55);
+    line-height:1.45;
+  }
+
+  /* Deployment Help Accordion */
+  .deploy-help{
+    width:100%;
+    max-width:880px;
+    border:1px solid rgba(0,240,255,0.2);
+    border-radius:10px;
+    background:rgba(8,12,18,0.7);
+    overflow:hidden;
+  }
+  .deploy-header{
+    padding:14px 18px;
+    font-family:'Orbitron',sans-serif;
+    font-size:12px;
+    letter-spacing:1.5px;
+    color:#fff;
+    cursor:pointer;
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    background:rgba(0,240,255,0.05);
+    user-select:none;
+  }
+  .deploy-content{
+    padding:18px;
+    font-size:12px;
+    line-height:1.6;
+    color:rgba(255,255,255,0.75);
+    border-top:1px solid rgba(0,240,255,0.12);
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+  }
+  .deploy-content code{
+    background:rgba(0,240,255,0.1);
+    color:#00f0ff;
+    padding:2px 6px;
+    border-radius:3px;
+    font-family:'Share Tech Mono',monospace;
+  }
+  .deploy-step{
+    display:flex;
+    gap:10px;
+    align-items:flex-start;
+  }
+  .deploy-badge{
+    font-family:'Orbitron',sans-serif;
+    font-size:10px;
+    padding:2px 7px;
+    background:rgba(0,240,255,0.15);
+    color:#00f0ff;
+    border-radius:4px;
+    white-space:nowrap;
+  }
+
+  /* Toast Notification */
+  .toast{
+    position:fixed;
+    bottom:24px;
+    left:50%;
+    transform:translateX(-50%) translateY(100px);
+    background:#00f0ff;
+    color:#06080d;
+    font-family:'Orbitron',sans-serif;
+    font-weight:700;
+    font-size:11px;
+    letter-spacing:1px;
+    padding:10px 20px;
+    border-radius:24px;
+    box-shadow:0 8px 24px rgba(0,240,255,0.6);
+    transition:transform 0.25s ease;
+    z-index:100;
+    pointer-events:none;
+  }
+  .toast.show{
+    transform:translateX(-50%) translateY(0);
+  }
+</style>
+</head>
+<body>
+
+<div class="grid-bg"></div>
+
+<div class="container">
+
+  <!-- Header -->
+  <header class="header">
+    <div class="brand-badge">Cross-Device Telematics Hub</div>
+    <h1 class="title">SPATIAL<span>DRIVE</span></h1>
+    <p class="subtitle">
+      Deploy online &amp; operate two mobile phones simultaneously. Turn Phone 1 into the interactive Steering Wheel and Phone 2 into the Augmented Reality Head-Up Display.
+    </p>
+    <div class="cloud-pill">
+      <span class="pulse-dot" id="broker-dot"></span>
+      <span id="broker-status">MQTT CLOUD: CONNECTING...</span>
+    </div>
+  </header>
+
+  <!-- Pairing Room Code Panel -->
+  <section class="room-panel">
+    <div class="room-panel-header">
+      <div class="panel-title">
+        <span>⚡ WIRELESS PAIRING ROOM</span>
+      </div>
+      <div style="font-size:10px;color:rgba(255,255,255,0.4)">AUTO-SYNC OVER 4G / 5G / WI-FI</div>
+    </div>
+    <div class="room-input-group">
+      <input type="text" id="room-code-input" class="room-input" value="SPATIAL-77" maxlength="16" placeholder="ENTER ROOM CODE">
+      <button class="btn-random" id="btn-rand-room">🎲 RANDOM CODE</button>
+    </div>
+    <div class="room-hint">
+      Both mobiles automatically join this private channel. Changing this code updates both QR codes and links in real time.
+    </div>
+  </section>
+
+  <!-- Dual Device Selection Cards -->
+  <section class="cards-grid">
+
+    <!-- Mobile 1: Steering Wheel Controller -->
+    <div class="device-card">
+      <div class="card-top">
+        <span class="card-pill ctrl">PHONE 1 • CONTROLLER</span>
+        <h2 class="card-title">STEERING WHEEL</h2>
+        <p class="card-desc">Interactive touch &amp; gyro tilt steering, paddle shifters, detent clicks &amp; obstacle distance simulator.</p>
+      </div>
+
+      <div class="qr-wrapper" id="qr-ctrl-box" title="Scan with Phone 1"></div>
+      <span class="qr-caption">SCAN WITH MOBILE 1</span>
+
+      <div class="card-actions">
+        <a id="link-ctrl-launch" href="controller.html" class="btn-primary ctrl-btn" target="_blank">
+          <span>🎮 LAUNCH CONTROLLER</span>
+        </a>
+        <button class="btn-secondary" id="btn-copy-ctrl">📋 COPY CONTROLLER LINK</button>
+      </div>
+    </div>
+
+    <!-- Mobile 2: AR Windshield HUD -->
+    <div class="device-card">
+      <div class="card-top">
+        <span class="card-pill hud">PHONE 2 • DISPLAY</span>
+        <h2 class="card-title">AUGMENTED REALITY HUD</h2>
+        <p class="card-desc">Real-time Ackermann dynamic arc projection, horizon reticle, windshield reflection mirror mode &amp; hazard alert.</p>
+      </div>
+
+      <div class="qr-wrapper" id="qr-hud-box" title="Scan with Phone 2"></div>
+      <span class="qr-caption">SCAN WITH MOBILE 2</span>
+
+      <div class="card-actions">
+        <a id="link-hud-launch" href="hud.html" class="btn-primary hud-btn" target="_blank">
+          <span>🏎️ LAUNCH HUD DISPLAY</span>
+        </a>
+        <button class="btn-secondary" id="btn-copy-hud">📋 COPY HUD LINK</button>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- 3-Step Setup Instructions -->
+  <section class="workflow-section">
+    <div class="section-title">HOW TO RUN ON TWO MOBILES</div>
+    <div class="steps-row">
+      <div class="step-box">
+        <span class="step-num">STEP 01</span>
+        <div class="step-head">Open on Laptop or Phone</div>
+        <p class="step-p">Visit your live GitHub Pages URL on any screen or computer to view both QR codes.</p>
+      </div>
+      <div class="step-box">
+        <span class="step-num">STEP 02</span>
+        <div class="step-head">Scan Phone 1 (Wheel)</div>
+        <p class="step-p">Scan the left QR code with your first phone to load the Steering Wheel Controller.</p>
+      </div>
+      <div class="step-box">
+        <span class="step-num">STEP 03</span>
+        <div class="step-head">Scan Phone 2 (HUD)</div>
+        <p class="step-p">Scan the right QR code with your second phone &amp; place it in front of you or near your windshield.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- GitHub Pages Online Deployment Guide -->
+  <section class="deploy-help">
+    <div class="deploy-header" id="deploy-header">
+      <span>🚀 GITHUB PAGES 1-CLICK DEPLOYMENT GUIDE</span>
+      <span id="deploy-arrow">▼</span>
+    </div>
+    <div class="deploy-content" id="deploy-content">
+      <div class="deploy-step">
+        <span class="deploy-badge">STEP 1</span>
+        <div>Commit &amp; push these updated files (<code>index.html</code>, <code>controller.html</code>, <code>hud.html</code>) to your GitHub repository.</div>
+      </div>
+      <div class="deploy-step">
+        <span class="deploy-badge">STEP 2</span>
+        <div>On GitHub, go to your repository and click <strong>Settings</strong> (top tab).</div>
+      </div>
+      <div class="deploy-step">
+        <span class="deploy-badge">STEP 3</span>
+        <div>In the left sidebar, click <strong>Pages</strong> (under "Code and automation").</div>
+      </div>
+      <div class="deploy-step">
+        <span class="deploy-badge">STEP 4</span>
+        <div>Under <strong>Build and deployment &gt; Source</strong>, choose <strong>Deploy from a branch</strong>. Select <code>main</code> (or <code>master</code>) branch and folder <code>/ (root)</code>, then click <strong>Save</strong>.</div>
+      </div>
+      <div class="deploy-step">
+        <span class="deploy-badge">STEP 5</span>
+        <div>Within ~30 seconds, GitHub gives you your live HTTPS link: <code>https://&lt;your-username&gt;.github.io/&lt;your-repo-name&gt;/</code>. Open it on your phone!</div>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<div class="toast" id="toast">LINK COPIED TO CLIPBOARD</div>
+
+<script>
+(() => {
+  'use strict';
+
+  // 1. Base URL Resolution
+  const origin = window.location.origin;
+  const path = window.location.pathname.replace(/\/index\.html$/i, '').replace(/\/+$/, '');
+  const baseUrl = `${origin}${path}`;
+
+  // 2. Room Code Management
+  const roomInput = document.getElementById('room-code-input');
+  const btnRandRoom = document.getElementById('btn-rand-room');
+
+  // Check query param or localStorage
+  const urlParams = new URLSearchParams(window.location.search);
+  let currentRoom = urlParams.get('room') || localStorage.getItem('spatialdrive_room') || 'SPATIAL-77';
+  currentRoom = currentRoom.toUpperCase().trim();
+  roomInput.value = currentRoom;
+
+  // 3. QR Code Instances
+  let qrCtrl = null;
+  let qrHud = null;
+
+  function getControllerUrl() {
+    return `${baseUrl}/controller.html?room=${encodeURIComponent(currentRoom)}`;
+  }
+  function getHudUrl() {
+    return `${baseUrl}/hud.html?room=${encodeURIComponent(currentRoom)}`;
+  }
+
+  function updateLinksAndQRs() {
+    const ctrlUrl = getControllerUrl();
+    const hudUrl = getHudUrl();
+
+    // Update buttons
+    const linkCtrlLaunch = document.getElementById('link-ctrl-launch');
+    const linkHudLaunch = document.getElementById('link-hud-launch');
+    if (linkCtrlLaunch) linkCtrlLaunch.href = ctrlUrl;
+    if (linkHudLaunch) linkHudLaunch.href = hudUrl;
+
+    // Render / Update QR Codes
+    const ctrlBox = document.getElementById('qr-ctrl-box');
+    const hudBox = document.getElementById('qr-hud-box');
+
+    if (window.QRCode) {
+      if (!qrCtrl) {
+        ctrlBox.innerHTML = '';
+        qrCtrl = new QRCode(ctrlBox, {
+          text: ctrlUrl,
+          width: 170,
+          height: 170,
+          colorDark: '#07090e',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } else {
+        qrCtrl.clear();
+        qrCtrl.makeCode(ctrlUrl);
+      }
+
+      if (!qrHud) {
+        hudBox.innerHTML = '';
+        qrHud = new QRCode(hudBox, {
+          text: hudUrl,
+          width: 170,
+          height: 170,
+          colorDark: '#07090e',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      } else {
+        qrHud.clear();
+        qrHud.makeCode(hudUrl);
+      }
+    } else {
+      // Fallback if QRCode CDN not loaded yet
+      ctrlBox.innerHTML = `<a href="${ctrlUrl}" target="_blank" style="font-size:10px;color:#000;word-break:break-all;padding:8px">Open Controller</a>`;
+      hudBox.innerHTML = `<a href="${hudUrl}" target="_blank" style="font-size:10px;color:#000;word-break:break-all;padding:8px">Open HUD</a>`;
+    }
+  }
+
+  // Room input change handler
+  roomInput.addEventListener('input', () => {
+    currentRoom = (roomInput.value || 'SPATIAL-77').toUpperCase().trim();
+    localStorage.setItem('spatialdrive_room', currentRoom);
+    updateLinksAndQRs();
+  });
+
+  // Randomize Room Code generator
+  const PREFIXES = ['DRIVE', 'APEX', 'HYPER', 'TURBO', 'AERO', 'SPATIAL', 'RADAR', 'DRIFT'];
+  btnRandRoom.addEventListener('click', () => {
+    const p = PREFIXES[Math.floor(Math.random() * PREFIXES.length)];
+    const n = Math.floor(100 + Math.random() * 900);
+    currentRoom = `${p}-${n}`;
+    roomInput.value = currentRoom;
+    localStorage.setItem('spatialdrive_room', currentRoom);
+    updateLinksAndQRs();
+    showToast(`NEW ROOM GENERATED: ${currentRoom}`);
+  });
+
+  // Copy buttons
+  const toast = document.getElementById('toast');
+  let toastTimer = null;
+  function showToast(msg) {
+    toast.textContent = msg;
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 2200);
+  }
+
+  function copyText(text, successMsg) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(() => {
+        showToast(successMsg);
+      }).catch(() => {
+        prompt('Copy Link:', text);
+      });
+    } else {
+      prompt('Copy Link:', text);
+    }
+  }
+
+  document.getElementById('btn-copy-ctrl').addEventListener('click', () => {
+    copyText(getControllerUrl(), 'CONTROLLER LINK COPIED!');
+  });
+  document.getElementById('btn-copy-hud').addEventListener('click', () => {
+    copyText(getHudUrl(), 'HUD DISPLAY LINK COPIED!');
+  });
+
+  // 4. Test Cloud MQTT Connectivity
+  const brokerDot = document.getElementById('broker-dot');
+  const brokerStatus = document.getElementById('broker-status');
+  try {
+    const testMqtt = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+      clientId: 'hub_test_' + Math.random().toString(16).slice(2, 8),
+      keepalive: 15,
+      reconnectPeriod: 3000
+    });
+    testMqtt.on('connect', () => {
+      brokerDot.style.background = '#00f0ff';
+      brokerDot.style.boxShadow = '0 0 10px #00f0ff';
+      brokerStatus.textContent = 'MQTT CLOUD: ONLINE & READY';
+    });
+    testMqtt.on('error', () => {
+      brokerDot.style.background = '#ff0055';
+      brokerDot.style.boxShadow = '0 0 10px #ff0055';
+      brokerStatus.textContent = 'MQTT CLOUD: RECONNECTING...';
+    });
+  } catch (_) {
+    brokerStatus.textContent = 'MQTT CLOUD: LOCAL MODE';
+  }
+
+  // 5. Accordion toggle for deployment guide
+  const deployHeader = document.getElementById('deploy-header');
+  const deployContent = document.getElementById('deploy-content');
+  const deployArrow = document.getElementById('deploy-arrow');
+  deployHeader.addEventListener('click', () => {
+    const isHidden = deployContent.style.display === 'none';
+    deployContent.style.display = isHidden ? 'flex' : 'none';
+    deployArrow.textContent = isHidden ? '▲' : '▼';
+  });
+
+  // Initial link & QR render
+  window.addEventListener('load', updateLinksAndQRs);
+  setTimeout(updateLinksAndQRs, 100);
+})();
+</script>
+
+</body>
+</html>
