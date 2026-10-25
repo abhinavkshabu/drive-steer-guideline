@@ -643,17 +643,36 @@
   }
   initMqttController();
 
-  function transmit() {
+  let lastTransmitTime = 0;
+  let pendingTransmitTimer = null;
+
+  function transmit(force = false) {
     const payload = { angle: Number(steerAngle.toFixed(1)), distance: distanceCm };
     // 1. Local Same-Device BroadcastChannel
     if (bc) {
       try { bc.postMessage(payload); } catch (_) {}
     }
-    // 2. Cross-Device Cloud MQTT
+    // 2. Cross-Device Cloud MQTT (smooth ~35Hz stream to prevent packet clumping & network jitter)
     if (mqttClient && mqttClient.connected) {
-      try {
-        mqttClient.publish(`spatialdrive/${ROOM_CODE}/telemetry`, JSON.stringify(payload));
-      } catch (_) {}
+      const now = performance.now();
+      if (force || now - lastTransmitTime >= 28) {
+        lastTransmitTime = now;
+        if (pendingTransmitTimer) {
+          clearTimeout(pendingTransmitTimer);
+          pendingTransmitTimer = null;
+        }
+        try {
+          mqttClient.publish(`spatialdrive/${ROOM_CODE}/telemetry`, JSON.stringify(payload));
+        } catch (_) {}
+      } else if (!pendingTransmitTimer) {
+        pendingTransmitTimer = setTimeout(() => {
+          pendingTransmitTimer = null;
+          lastTransmitTime = performance.now();
+          try {
+            mqttClient.publish(`spatialdrive/${ROOM_CODE}/telemetry`, JSON.stringify(payload));
+          } catch (_) {}
+        }, 28);
+      }
     }
   }
 
