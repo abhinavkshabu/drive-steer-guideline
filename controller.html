@@ -172,50 +172,27 @@
     width:100%;max-width:440px;
     background:rgba(14,18,26,.65);backdrop-filter:blur(10px);
     border:1px solid rgba(255,255,255,.08);border-radius:10px;
-    padding:10px 12px;display:flex;flex-direction:column;align-items:center;gap:8px;
+    padding:12px 14px;display:flex;flex-direction:column;align-items:center;gap:8px;
     z-index:10;
   }
   .distance-header{
     width:100%;display:flex;justify-content:space-between;align-items:center;
     font-size:9.5px;letter-spacing:2px;color:rgba(255,255,255,.3);
   }
-  .dual-dist-row{
-    width:100%;display:flex;gap:10px;justify-content:space-between;
-  }
-  .sensor-card{
-    flex:1;background:rgba(255,255,255,.02);
-    border:1px solid rgba(255,255,255,.08);border-radius:8px;
-    padding:6px 8px;display:flex;flex-direction:column;align-items:center;gap:4px;
-    transition:border-color .2s ease, background .2s ease;
-  }
-  .sensor-card.yellow{
-    border-color:rgba(255,215,0,.5);background:rgba(255,215,0,.06);
-  }
-  .sensor-card.yellow .dist-val{
-    color:#FFD700;text-shadow:0 0 14px rgba(255,215,0,.7);
-  }
-  .sensor-card.hazard{
-    border-color:rgba(255,140,0,.6);background:rgba(255,140,0,.08);
-  }
-  .sensor-title{
-    font-size:8.5px;letter-spacing:1.5px;color:rgba(255,255,255,.4);font-weight:700;
-  }
-  .sensor-card.yellow .sensor-title{color:#FFD700}
-  .sensor-card.hazard .sensor-title{color:#FF8C00}
   .dist-stepper{
-    display:flex;align-items:center;gap:12px;
+    display:flex;align-items:center;gap:18px;
   }
   .dist-btn{
-    width:30px;height:30px;border-radius:50%;
+    width:36px;height:36px;border-radius:50%;
     background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);
-    color:#fff;font-family:'Orbitron',sans-serif;font-size:14px;
+    color:#fff;font-family:'Orbitron',sans-serif;font-size:16px;
     display:flex;align-items:center;justify-content:center;
     cursor:pointer;transition:all .15s ease;
   }
   .dist-btn:hover{background:rgba(0,240,255,.15);border-color:#00f0ff}
   .dist-val{
-    font-family:'Orbitron',sans-serif;font-weight:700;font-size:16px;
-    min-width:65px;text-align:center;color:#fff;
+    font-family:'Orbitron',sans-serif;font-weight:700;font-size:22px;
+    min-width:85px;text-align:center;color:#fff;
     transition:color .2s ease;
   }
   .dist-val.hazard{color:#FF8C00;text-shadow:0 0 14px rgba(255,140,0,.6)}
@@ -223,22 +200,13 @@
   /* Presets */
   .presets{display:flex;gap:6px;width:100%;justify-content:center}
   .preset-btn{
-    flex:1;max-width:90px;padding:5px 0;border-radius:4px;
+    flex:1;max-width:64px;padding:5px 0;border-radius:4px;
     background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);
-    color:rgba(255,255,255,.5);font-size:8.5px;font-family:'Orbitron',sans-serif;
+    color:rgba(255,255,255,.5);font-size:9px;font-family:'Orbitron',sans-serif;
     cursor:pointer;text-align:center;transition:all .15s ease;
   }
-  .preset-btn.test-btn-yellow{
-    border-color:rgba(255,215,0,.35);color:rgba(255,215,0,.85);
-  }
-  .preset-btn.test-btn-yellow:hover{
-    background:rgba(255,215,0,.15);color:#FFD700;
-  }
   .preset-btn.hazard-preset{
-    border-color:rgba(255,140,0,.35);color:rgba(255,140,0,.8);
-  }
-  .preset-btn.hazard-preset:hover{
-    background:rgba(255,140,0,.15);color:#FF8C00;
+    border-color:rgba(255,140,0,.3);color:rgba(255,140,0,.7);
   }
   .preset-btn:hover{background:rgba(255,255,255,.08);color:#fff}
 
@@ -349,7 +317,6 @@
   </div>
   <div class="header-actions">
     <a href="index.html" class="chip-btn" style="text-decoration:none;display:inline-flex;align-items:center;" title="Return to Launch Hub">HUB</a>
-    <button class="chip-btn" id="btn-ctrl-serial" title="Connect Arduino Nano via USB (9600 Baud)">NANO USB</button>
     <button class="chip-btn active" id="btn-autocenter" title="Toggle Auto Return to Center Spring">SPRING: ON</button>
     <button class="chip-btn" id="btn-gyro" title="Toggle Phone Gyroscope / Tilt Steering">GYRO: OFF</button>
     <button class="chip-btn" id="btn-audio" title="Audio Alert & Mechanical Clicks">AUDIO: ON</button>
@@ -547,40 +514,25 @@
   </button>
 </div>
 
-<!-- Ultrasonic Proximity Hazard Section (Dual HC-SR04 Sensors) -->
+<!-- Ultrasonic Proximity Hazard Section -->
 <div class="distance-section">
   <div class="distance-header">
-    <span>ULTRASONIC SENSORS (HC-SR04)</span>
+    <span>ULTRASONIC PROXIMITY</span>
     <span id="hazard-tag" style="color:rgba(255,255,255,.3)">NORMAL</span>
   </div>
 
-  <div class="dual-dist-row">
-    <!-- Sensor 1 (Left) -->
-    <div class="sensor-card" id="sensor-card-l">
-      <div class="sensor-title">S1 (LEFT)</div>
-      <div class="dist-stepper">
-        <button class="dist-btn" id="dist-l-down">−</button>
-        <div class="dist-val" id="dist-l-val">55 CM</div>
-        <button class="dist-btn" id="dist-l-up">+</button>
-      </div>
-    </div>
-
-    <!-- Sensor 2 (Right) -->
-    <div class="sensor-card" id="sensor-card-r">
-      <div class="sensor-title">S2 (RIGHT)</div>
-      <div class="dist-stepper">
-        <button class="dist-btn" id="dist-r-down">−</button>
-        <div class="dist-val" id="dist-r-val">55 CM</div>
-        <button class="dist-btn" id="dist-r-up">+</button>
-      </div>
-    </div>
+  <div class="dist-stepper">
+    <button class="dist-btn" id="dist-down">−</button>
+    <div class="dist-val" id="dist-val">55 CM</div>
+    <button class="dist-btn" id="dist-up">+</button>
   </div>
 
   <div class="presets">
-    <button class="preset-btn test-btn-yellow" id="test-left-btn" title="Left sensor <30cm (Left line yellow)">LEFT &lt;30</button>
-    <button class="preset-btn test-btn-yellow" id="test-right-btn" title="Right sensor <30cm (Right line yellow)">RIGHT &lt;30</button>
-    <button class="preset-btn hazard-preset" id="test-both-btn" title="Both sensors <30cm (Both yellow + Hazard Alert)">BOTH &lt;30</button>
-    <button class="preset-btn" id="test-clear-btn" title="Clear sensors (Normal cyan)">CLEAR</button>
+    <button class="preset-btn hazard-preset" data-dist="10">10 CM</button>
+    <button class="preset-btn hazard-preset" data-dist="18">18 CM</button>
+    <button class="preset-btn" data-dist="35">35 CM</button>
+    <button class="preset-btn" data-dist="75">75 CM</button>
+    <button class="preset-btn" data-dist="150">150 CM</button>
   </div>
 </div>
 
@@ -601,10 +553,8 @@
    * 1. STATE & TELEMETRY BUS
    * ════════════════════════════════════════════════════════════════════════ */
   let steerAngle = 0.0;     // degrees: -45.0 to +45.0
-  let distLeftCm = 55;      // Sensor 1 (Left) cm
-  let distRightCm = 55;     // Sensor 2 (Right) cm
-  let distanceCm = 55;      // min distance
-  const HAZARD_THRESH = 30; // cm: proximity trigger threshold (<30cm yellow)
+  let distanceCm = 55;      // ultrasonic cm
+  const HAZARD_THRESH = 20; // cm: hazard trigger threshold
   
   let autoCenter = true;    // spring back to 0° on release
   let gyroActive = false;   // phone tilt mode
@@ -636,10 +586,7 @@
   const hubRing        = document.getElementById('hub-ring');
   const logoArrow      = document.getElementById('logo-arrow');
   
-  const sensorCardL    = document.getElementById('sensor-card-l');
-  const sensorCardR    = document.getElementById('sensor-card-r');
-  const distLVal       = document.getElementById('dist-l-val');
-  const distRVal       = document.getElementById('dist-r-val');
+  const distVal        = document.getElementById('dist-val');
   const hazardTag      = document.getElementById('hazard-tag');
 
   // Cockpit Dash Elements
@@ -835,58 +782,25 @@
     });
   }
 
-  /* ── Multi-Broker Wireless Engine with Automatic Failover ── */
-  const MQTT_BROKERS = [
-    { name: 'EMQX (Default)', url: 'wss://broker.emqx.io:8084/mqtt' },
-    { name: 'HiveMQ (Fallback)', url: 'wss://broker.hivemq.com:8884/mqtt' },
-    { name: 'Mosquitto', url: 'wss://test.mosquitto.org:8081/mqtt' }
-  ];
-  let currentBrokerIndex = parseInt(localStorage.getItem('spatial_broker_idx') || '0', 10);
-  if (isNaN(currentBrokerIndex) || currentBrokerIndex >= MQTT_BROKERS.length) currentBrokerIndex = 0;
-
   let mqttClient = null;
-  let brokerFailoverTimer = null;
-
   function initMqttController() {
     if (mqttClient) {
       try { mqttClient.end(true); } catch (_) {}
     }
-    if (brokerFailoverTimer) {
-      clearTimeout(brokerFailoverTimer);
-      brokerFailoverTimer = null;
-    }
-
-    const broker = MQTT_BROKERS[currentBrokerIndex];
-    if (connText) connText.textContent = `CONNECTING: ${broker.name} (${ROOM_CODE})...`;
-
-    // Failover if broker doesn't connect within 4.5 seconds
-    brokerFailoverTimer = setTimeout(() => {
-      if (!mqttClient || !mqttClient.connected) {
-        console.warn(`Controller broker ${broker.name} timed out. Failing over...`);
-        currentBrokerIndex = (currentBrokerIndex + 1) % MQTT_BROKERS.length;
-        localStorage.setItem('spatial_broker_idx', currentBrokerIndex.toString());
-        initMqttController();
-      }
-    }, 4500);
-
+    if (connText) connText.textContent = `CONNECTING (${ROOM_CODE})...`;
     try {
-      mqttClient = mqtt.connect(broker.url, {
+      mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
         clientId: 'ctrl_' + Math.random().toString(16).slice(2, 8),
         keepalive: 30,
-        reconnectPeriod: 2500
+        reconnectPeriod: 2000
       });
 
       mqttClient.on('connect', () => {
-        if (brokerFailoverTimer) {
-          clearTimeout(brokerFailoverTimer);
-          brokerFailoverTimer = null;
-        }
-        localStorage.setItem('spatial_broker_idx', currentBrokerIndex.toString());
         if (connDot) {
           connDot.style.background = '#00f0ff';
           connDot.style.boxShadow = '0 0 8px #00f0ff';
         }
-        if (connText) connText.textContent = `CLOUD SYNC: ${broker.name} (${ROOM_CODE})`;
+        if (connText) connText.textContent = `CLOUD SYNC (ROOM: ${ROOM_CODE})`;
       });
 
       mqttClient.on('error', () => {
@@ -894,7 +808,7 @@
           connDot.style.background = '#ff0055';
           connDot.style.boxShadow = '0 0 8px #ff0055';
         }
-        if (connText) connText.textContent = `${broker.name} ERROR. RETRYING...`;
+        if (connText) connText.textContent = 'CLOUD RECONNECTING...';
       });
 
       mqttClient.on('offline', () => {
@@ -910,108 +824,13 @@
   }
   initMqttController();
 
-  /* ── Web Serial API (Arduino Nano + 2 HC-SR04 Sensors @ 9600 Baud) ── */
-  let ctrlSerialPort = null;
-  let ctrlSerialReader = null;
-  const ctrlSerialBaud = 9600;
-
-  function parseArduinoTelemetry(raw) {
-    raw = raw.trim();
-    if (!raw) return null;
-    const m1 = raw.match(/Sensor\s*1:\s*(-?\d+|No\s*Echo)/i);
-    const m2 = raw.match(/Sensor\s*2:\s*(-?\d+|No\s*Echo)/i);
-    if (m1 || m2) {
-      let d1 = 999;
-      let d2 = 999;
-      if (m1) {
-        const val1 = m1[1].trim();
-        d1 = (val1.toLowerCase().includes('echo') || parseInt(val1, 10) < 0) ? 999 : parseInt(val1, 10);
-      }
-      if (m2) {
-        const val2 = m2[1].trim();
-        d2 = (val2.toLowerCase().includes('echo') || parseInt(val2, 10) < 0) ? 999 : parseInt(val2, 10);
-      }
-      return { distL: d1, distR: d2 };
-    }
-    if (raw.startsWith('{') && raw.endsWith('}')) {
-      try {
-        const data = JSON.parse(raw);
-        const l = data.d1 ?? data.distL ?? data.left ?? data.distance1;
-        const r = data.d2 ?? data.distR ?? data.right ?? data.distance2;
-        return {
-          distL: typeof l === 'number' ? l : 999,
-          distR: typeof r === 'number' ? r : 999,
-          angle: typeof data.angle === 'number' ? data.angle : undefined
-        };
-      } catch (_) {}
-    }
-    const nums = raw.match(/[-+]?\d*\.?\d+/g);
-    if (nums && nums.length >= 2) {
-      return { distL: parseFloat(nums[0]), distR: parseFloat(nums[1]) };
-    } else if (nums && nums.length === 1) {
-      return { distL: parseFloat(nums[0]), distR: parseFloat(nums[0]) };
-    }
-    return null;
-  }
-
-  async function connectCtrlSerial() {
-    if (!('serial' in navigator)) {
-      alert('Web Serial API is available in Chrome, Edge, and Opera (Desktop or Android via USB-OTG). Safari and iOS do not support Web Serial.');
-      return;
-    }
-    try {
-      ctrlSerialPort = await navigator.requestPort();
-      await ctrlSerialPort.open({ baudRate: ctrlSerialBaud });
-      const textDecoder = new TextDecoderStream();
-      ctrlSerialPort.readable.pipeTo(textDecoder.writable);
-      ctrlSerialReader = textDecoder.readable.getReader();
-      
-      const btnSer = document.getElementById('btn-ctrl-serial');
-      if (btnSer) {
-        btnSer.classList.add('active');
-        btnSer.textContent = 'NANO: 9600';
-      }
-
-      let buffer = '';
-      while (true) {
-        const { value, done } = await ctrlSerialReader.read();
-        if (done) break;
-        buffer += value;
-        const lines = buffer.split('\n');
-        buffer = lines.pop();
-        for (const line of lines) {
-          const parsed = parseArduinoTelemetry(line);
-          if (parsed) {
-            if (typeof parsed.distL === 'number') distLeftCm = parsed.distL;
-            if (typeof parsed.distR === 'number') distRightCm = parsed.distR;
-            distanceCm = Math.min(distLeftCm, distRightCm);
-            if (typeof parsed.angle === 'number') steerAngle = parsed.angle;
-            updateUI();
-          }
-        }
-      }
-    } catch (err) {
-      console.warn('Serial error or cancelled', err);
-      const btnSer = document.getElementById('btn-ctrl-serial');
-      if (btnSer) {
-        btnSer.classList.remove('active');
-        btnSer.textContent = 'NANO USB';
-      }
-    }
-  }
-
-  const btnCtrlSerial = document.getElementById('btn-ctrl-serial');
-  if (btnCtrlSerial) btnCtrlSerial.addEventListener('click', connectCtrlSerial);
-
   let lastTransmitTime = 0;
   let pendingTransmitTimer = null;
 
   function transmit(force = false) {
     const payload = {
       angle: Number(steerAngle.toFixed(1)),
-      distL: Math.round(distLeftCm),
-      distR: Math.round(distRightCm),
-      distance: Math.min(Math.round(distLeftCm), Math.round(distRightCm)),
+      distance: distanceCm,
       speed: Math.round(currentSpeedKmh),
       rpm: Math.round(currentRpm)
     };
@@ -1090,11 +909,7 @@
   let lastDetentAngle = 0;
 
   function updateUI() {
-    distanceCm = Math.min(distLeftCm, distRightCm);
-    const isLeftWarn = (distLeftCm > 0 && distLeftCm < HAZARD_THRESH);
-    const isRightWarn = (distRightCm > 0 && distRightCm < HAZARD_THRESH);
-    // User rule: no hazard warning until both turning yellow
-    const isHazard = isLeftWarn && isRightWarn;
+    const isHazard = distanceCm < HAZARD_THRESH;
 
     // Trigger hazard alert sound/vibe on state change
     if (isHazard && !prevHazard) {
@@ -1145,33 +960,12 @@
     // ── 3. Steering Wheel Rev & Shift LEDs ──
     updateWheelLeds(steerAngle, currentRpm);
 
-    // ── 4. Distance Telemetry Section (Dual Sensors) ──
-    if (distLVal) distLVal.textContent = (distLeftCm > 0 && distLeftCm < 400) ? `${Math.round(distLeftCm)} CM` : '---';
-    if (distRVal) distRVal.textContent = (distRightCm > 0 && distRightCm < 400) ? `${Math.round(distRightCm)} CM` : '---';
-
-    if (sensorCardL) {
-      sensorCardL.classList.toggle('yellow', isLeftWarn && !isHazard);
-      sensorCardL.classList.toggle('hazard', isHazard);
-    }
-    if (sensorCardR) {
-      sensorCardR.classList.toggle('yellow', isRightWarn && !isHazard);
-      sensorCardR.classList.toggle('hazard', isHazard);
-    }
-
+    // ── 4. Distance Telemetry Section ──
+    distVal.textContent = `${distanceCm} CM`;
+    distVal.classList.toggle('hazard', isHazard);
     if (hazardTag) {
-      if (isHazard) {
-        hazardTag.textContent = '⚠ BOTH SENSORS <30CM (CRITICAL HAZARD)';
-        hazardTag.style.color = '#FF8C00';
-      } else if (isLeftWarn && !isRightWarn) {
-        hazardTag.textContent = 'LEFT SENSOR <30CM (LEFT YELLOW)';
-        hazardTag.style.color = '#FFD700';
-      } else if (isRightWarn && !isLeftWarn) {
-        hazardTag.textContent = 'RIGHT SENSOR <30CM (RIGHT YELLOW)';
-        hazardTag.style.color = '#FFD700';
-      } else {
-        hazardTag.textContent = 'NORMAL';
-        hazardTag.style.color = 'rgba(255,255,255,.3)';
-      }
+      hazardTag.textContent = isHazard ? '⚠ PROXIMITY HAZARD' : 'NORMAL';
+      hazardTag.style.color = isHazard ? '#FF8C00' : 'rgba(255,255,255,.3)';
     }
 
     // Transmit over bus
@@ -1526,54 +1320,20 @@
     }
   });
 
-  // Dual Sensor Stepper Listeners
-  const distLDown = document.getElementById('dist-l-down');
-  const distLUp = document.getElementById('dist-l-up');
-  const distRDown = document.getElementById('dist-r-down');
-  const distRUp = document.getElementById('dist-r-up');
-
-  if (distLDown) distLDown.addEventListener('click', () => {
-    distLeftCm = Math.max(2, distLeftCm - 5);
+  document.getElementById('dist-down').addEventListener('click', () => {
+    distanceCm = Math.max(2, distanceCm - 5);
     updateUI();
   });
-  if (distLUp) distLUp.addEventListener('click', () => {
-    distLeftCm = Math.min(250, distLeftCm + 5);
-    updateUI();
-  });
-  if (distRDown) distRDown.addEventListener('click', () => {
-    distRightCm = Math.max(2, distRightCm - 5);
-    updateUI();
-  });
-  if (distRUp) distRUp.addEventListener('click', () => {
-    distRightCm = Math.min(250, distRightCm + 5);
+  document.getElementById('dist-up').addEventListener('click', () => {
+    distanceCm = Math.min(250, distanceCm + 5);
     updateUI();
   });
 
-  // Quick Test Buttons
-  const testLeftBtn = document.getElementById('test-left-btn');
-  const testRightBtn = document.getElementById('test-right-btn');
-  const testBothBtn = document.getElementById('test-both-btn');
-  const testClearBtn = document.getElementById('test-clear-btn');
-
-  if (testLeftBtn) testLeftBtn.addEventListener('click', () => {
-    distLeftCm = 20;  // <30cm -> Left turns yellow
-    distRightCm = 85; // Normal cyan
-    updateUI();
-  });
-  if (testRightBtn) testRightBtn.addEventListener('click', () => {
-    distLeftCm = 85;  // Normal cyan
-    distRightCm = 20; // <30cm -> Right turns yellow
-    updateUI();
-  });
-  if (testBothBtn) testBothBtn.addEventListener('click', () => {
-    distLeftCm = 20;  // <30cm
-    distRightCm = 18; // <30cm -> Both turn yellow & triggers Hazard alert
-    updateUI();
-  });
-  if (testClearBtn) testClearBtn.addEventListener('click', () => {
-    distLeftCm = 999;
-    distRightCm = 999;
-    updateUI();
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      distanceCm = parseInt(btn.getAttribute('data-dist'), 10);
+      updateUI();
+    });
   });
 
   /* ── Continuous Vehicle Physics Loop ── */

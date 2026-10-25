@@ -524,23 +524,6 @@
     </div>
   </section>
 
-  <!-- Local Network / File Protocol Warning & Host URL Override -->
-  <div id="file-protocol-warning" style="display:none;width:100%;max-width:880px;background:rgba(255,140,0,0.12);border:1px solid rgba(255,140,0,0.5);border-radius:10px;padding:14px 18px;display:none;flex-direction:column;gap:10px;box-shadow:0 8px 24px rgba(0,0,0,0.5);">
-    <div style="display:flex;align-items:center;gap:8px;font-family:'Orbitron',sans-serif;font-size:11.5px;color:#FF9D00;font-weight:700;">
-      <span>⚠️ RUNNING FROM LOCAL DISK (FILE://)</span>
-    </div>
-    <div style="font-size:11px;color:rgba(255,255,255,0.85);line-height:1.5;">
-      Mobile phone cameras <b>cannot scan <code>file:///</code> links</b> across Wi-Fi. To use Controller on Phone 1 and HUD on Phone 2:
-      <br>• <b>Option A (Local Wi-Fi Server):</b> Run <code>python -m http.server 8000</code> or <code>npx serve</code> in this folder, then enter your computer's LAN IP below (e.g. <code>http://192.168.1.15:8000</code>).
-      <br>• <b>Option B (Free Web Hosting):</b> Push to GitHub Pages or drag &amp; drop onto Netlify.
-    </div>
-    <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin-top:2px;">
-      <span style="font-size:9.5px;color:#00f0ff;letter-spacing:1px;font-weight:700;">LAN IP / SERVER URL:</span>
-      <input type="text" id="host-override-input" placeholder="e.g. http://192.168.1.25:8000" style="flex:1;min-width:220px;background:rgba(0,0,0,0.6);border:1px solid rgba(0,240,255,0.4);border-radius:6px;padding:8px 12px;color:#fff;font-family:'Share Tech Mono',monospace;font-size:12px;">
-      <button id="btn-apply-host" style="background:#00f0ff;color:#06080d;border:none;padding:8px 16px;border-radius:6px;font-family:'Orbitron',sans-serif;font-weight:800;font-size:10px;cursor:pointer;">GENERATE MOBILE QRs</button>
-    </div>
-  </div>
-
   <!-- Dual Device Selection Cards -->
   <section class="cards-grid">
 
@@ -644,35 +627,8 @@
 (() => {
   'use strict';
 
-  // 1. Safe Base URL Resolution (Works on file://, LAN IP, and GitHub Pages)
-  const hostOverrideInput = document.getElementById('host-override-input');
-  const btnApplyHost = document.getElementById('btn-apply-host');
-  let hostOverride = localStorage.getItem('spatial_host_override') || '';
-
-  if (window.location.protocol === 'file:') {
-    const fileWarn = document.getElementById('file-protocol-warning');
-    if (fileWarn) fileWarn.style.display = 'flex';
-  }
-
-  if (hostOverrideInput && hostOverride) {
-    hostOverrideInput.value = hostOverride;
-  }
-
-  if (btnApplyHost && hostOverrideInput) {
-    btnApplyHost.addEventListener('click', () => {
-      hostOverride = (hostOverrideInput.value || '').trim();
-      localStorage.setItem('spatial_host_override', hostOverride);
-      updateLinksAndQRs();
-      showToast(hostOverride ? 'UPDATED QR CODES WITH HOST URL!' : 'RESET TO LOCAL PROTOCOL');
-    });
-  }
-
+  // 1. Safe Base URL Resolution (Works on file://, localhost, and GitHub Pages)
   function getAbsoluteBase() {
-    if (hostOverride && hostOverride.trim()) {
-      let h = hostOverride.trim();
-      if (!h.endsWith('/')) h += '/';
-      return h;
-    }
     let loc = window.location.href.split('?')[0].split('#')[0];
     if (window.location.protocol === 'file:') {
       return loc.substring(0, loc.lastIndexOf('/') + 1);
@@ -814,42 +770,28 @@
     copyText(getHudUrl(), 'HUD DISPLAY LINK COPIED!');
   });
 
-  // 4. Test Cloud MQTT Connectivity with multi-broker fallback
+  // 4. Test Cloud MQTT Connectivity
   const brokerDot = document.getElementById('broker-dot');
   const brokerStatus = document.getElementById('broker-status');
-  const TEST_BROKERS = [
-    { name: 'EMQX', url: 'wss://broker.emqx.io:8084/mqtt' },
-    { name: 'HiveMQ', url: 'wss://broker.hivemq.com:8884/mqtt' },
-    { name: 'Mosquitto', url: 'wss://test.mosquitto.org:8081/mqtt' }
-  ];
-  let testBrokerIdx = parseInt(localStorage.getItem('spatial_broker_idx') || '0', 10);
-  if (isNaN(testBrokerIdx) || testBrokerIdx >= TEST_BROKERS.length) testBrokerIdx = 0;
-
-  function testBrokerConnection() {
-    const b = TEST_BROKERS[testBrokerIdx];
-    try {
-      const testMqtt = mqtt.connect(b.url, {
-        clientId: 'hub_test_' + Math.random().toString(16).slice(2, 8),
-        keepalive: 15,
-        reconnectPeriod: 3000
-      });
-      testMqtt.on('connect', () => {
-        brokerDot.style.background = '#00f0ff';
-        brokerDot.style.boxShadow = '0 0 10px #00f0ff';
-        brokerStatus.textContent = `MQTT CLOUD: ${b.name} ONLINE`;
-      });
-      testMqtt.on('error', () => {
-        brokerDot.style.background = '#ffaa00';
-        brokerDot.style.boxShadow = '0 0 10px #ffaa00';
-        brokerStatus.textContent = `MQTT: SWITCHING BROKER...`;
-        testBrokerIdx = (testBrokerIdx + 1) % TEST_BROKERS.length;
-        localStorage.setItem('spatial_broker_idx', testBrokerIdx.toString());
-      });
-    } catch (_) {
-      brokerStatus.textContent = 'MQTT CLOUD: LOCAL BROADCAST';
-    }
+  try {
+    const testMqtt = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+      clientId: 'hub_test_' + Math.random().toString(16).slice(2, 8),
+      keepalive: 15,
+      reconnectPeriod: 3000
+    });
+    testMqtt.on('connect', () => {
+      brokerDot.style.background = '#00f0ff';
+      brokerDot.style.boxShadow = '0 0 10px #00f0ff';
+      brokerStatus.textContent = 'MQTT CLOUD: ONLINE & READY';
+    });
+    testMqtt.on('error', () => {
+      brokerDot.style.background = '#ff0055';
+      brokerDot.style.boxShadow = '0 0 10px #ff0055';
+      brokerStatus.textContent = 'MQTT CLOUD: RECONNECTING...';
+    });
+  } catch (_) {
+    brokerStatus.textContent = 'MQTT CLOUD: LOCAL MODE';
   }
-  testBrokerConnection();
 
   // 5. Accordion toggle for deployment guide
   const deployHeader = document.getElementById('deploy-header');
