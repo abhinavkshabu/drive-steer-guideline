@@ -240,6 +240,58 @@
       opacity: .5
     }
 
+    /* ── Digital HUD Speedometer Cluster (Only number changing in holographic AR theme) ── */
+    #hud-speed-cluster {
+      position: fixed;
+      bottom: 58px;
+      left: 50%;
+      transform: translateX(-50%);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+      z-index: 22;
+      transition: color .2s ease, text-shadow .2s ease;
+    }
+
+    body.mirrored #hud-speed-cluster {
+      transform: translateX(-50%) scaleX(-1);
+    }
+
+    #hud-speed-val {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 900;
+      font-size: clamp(48px, 8.5vw, 76px);
+      line-height: 0.95;
+      color: #00f0ff;
+      letter-spacing: -2px;
+      text-shadow: 0 0 24px rgba(0, 240, 255, 0.7), 0 0 54px rgba(0, 240, 255, 0.3);
+      transition: color .2s ease, text-shadow .2s ease;
+    }
+
+    #hud-speed-unit {
+      font-family: 'Orbitron', sans-serif;
+      font-weight: 700;
+      font-size: 10.5px;
+      letter-spacing: 5px;
+      color: rgba(0, 240, 255, 0.65);
+      margin-top: 3px;
+      text-shadow: 0 0 10px rgba(0, 240, 255, 0.35);
+      transition: color .2s ease;
+    }
+
+    /* Hazard Amber State for Speedometer */
+    #hud-speed-cluster.hazard #hud-speed-val {
+      color: #FF9D00;
+      text-shadow: 0 0 24px rgba(255, 157, 0, 0.8), 0 0 54px rgba(255, 140, 0, 0.4);
+    }
+
+    #hud-speed-cluster.hazard #hud-speed-unit {
+      color: rgba(255, 157, 0, 0.75);
+      text-shadow: 0 0 10px rgba(255, 140, 0, 0.5);
+    }
+
     /* ── Connection Modal / Drawer ── */
     #conn-drawer {
       position: fixed;
@@ -389,6 +441,16 @@
       .tel-val {
         font-size: 13.5px;
       }
+      #hud-speed-cluster {
+        bottom: 34px;
+      }
+      #hud-speed-val {
+        font-size: clamp(38px, 6.8vw, 54px);
+      }
+      #hud-speed-unit {
+        font-size: 9px;
+        letter-spacing: 4px;
+      }
       #hazard-banner {
         top: 38px;
         font-size: 11px;
@@ -443,6 +505,12 @@
   <!-- Dynamic Hazard Banner -->
   <div id="hazard-banner">
     <span>⚠ PROXIMITY HAZARD DETECTED</span>
+  </div>
+
+  <!-- Digital HUD Speedometer (Only number changing in holographic AR theme) -->
+  <div id="hud-speed-cluster">
+    <div id="hud-speed-val">0</div>
+    <div id="hud-speed-unit">KM/H</div>
   </div>
 
   <!-- Telemetry Readout -->
@@ -505,12 +573,12 @@
        * As s increases, the path curves smoothly into the turn with no inflection.
        * ════════════════════════════════════════════════════════════════════════ */
       const WHEELBASE = 2.7;        // standard midsize wheelbase (meters)
-      const LANE_WIDTH = 1.50;       // HUD guide width (meters)
-      const HALF_LW = LANE_WIDTH / 2;
+      const TRACK_WIDTH = 2.25;      // Real vehicle track width with safety buffer (meters) — 50% wider
+      const HALF_TW = TRACK_WIDTH / 2;
       const CAM_HEIGHT = 1.25;       // driver eye height above road plane (m)
       const CAM_BEHIND_HOOD = 1.80;       // distance from eye to vehicle front bumper (m)
       const NEAR_S = 0.50;       // closest ground sample ahead of hood (m)
-      const FAR_S = 26.0;       // maximum forward preview horizon (m)
+      const FAR_S = 34.0;       // dynamic maximum forward preview horizon (m)
       const MAX_HEADING_CHG = 0.72;       // ~41° max heading preview (prevents sideways drift)
       const HAZARD_THRESHOLD = 20.0;       // cm: threshold for amber hazard state
 
@@ -591,17 +659,24 @@
        * ════════════════════════════════════════════════════════════════════════ */
       let targetSteerAngle = 0.0; // degrees: -45.0 to +45.0
       let targetDistanceCm = 999.0;
+      let targetSpeedKmh = 0.0;   // digital speed from controller physics
+      let targetRpm = 850;
+
       let steerAngle = 0.0;       // instantaneous smoothed angle
       let distanceCm = 999.0;     // instantaneous smoothed distance
+      let speedKmh = 0.0;         // instantaneous smoothed speed
       let isHazard = false;
       let isLive = false;
       let isMirrored = false;
 
       let smoothAngle = 0.0;
       let smoothDistance = 999.0;
+      let smoothSpeed = 0.0;
       let smoothHazard = 0.0;
+      let streamDistance = 0.0;   // forward velocity streaming offset
       const angleVelocity = { val: 0.0 };
       const distVelocity = { val: 0.0 };
+      const speedVelocity = { val: 0.0 };
       let lastFrameTime = performance.now();
 
       // Unity/Game-engine grade SmoothDamp (spring-damper interpolation)
@@ -638,6 +713,8 @@
           if (d && typeof d.angle === 'number') {
             targetSteerAngle = d.angle;
             if (typeof d.distance === 'number') targetDistanceCm = d.distance;
+            if (typeof d.speed === 'number') targetSpeedKmh = d.speed;
+            if (typeof d.rpm === 'number') targetRpm = d.rpm;
             onReceiveLiveData('BROADCAST');
           }
         };
@@ -681,6 +758,8 @@
               if (d && typeof d.angle === 'number') {
                 targetSteerAngle = d.angle;
                 if (typeof d.distance === 'number') targetDistanceCm = d.distance;
+                if (typeof d.speed === 'number') targetSpeedKmh = d.speed;
+                if (typeof d.rpm === 'number') targetRpm = d.rpm;
                 onReceiveLiveData('WIRELESS');
               }
             } catch (_) { }
@@ -727,6 +806,8 @@
                   const data = JSON.parse(trimmed);
                   if (typeof data.angle === 'number') targetSteerAngle = data.angle;
                   if (typeof data.distance === 'number') targetDistanceCm = data.distance;
+                  if (typeof data.speed === 'number') targetSpeedKmh = data.speed;
+                  if (typeof data.rpm === 'number') targetRpm = data.rpm;
                   onReceiveLiveData('SERIAL');
                 } catch (_) { }
               }
@@ -955,9 +1036,10 @@
         ctx.stroke();
       }
 
-      /* ── Build 2D Projected Guideline Points ── */
+      /* ── Build 2D Projected Guideline Points (Wide Vehicle Track Physics) ── */
       function buildProjectedLine(steerDeg, sign, maxArcDist, numSteps = 55) {
-        const lateralOffset = sign * HALF_LW;
+        // Track width 2.25m: each line is displaced normal to vehicle centerline by ±HALF_TW
+        const lateralOffset = sign * HALF_TW;
         const pts = [];
 
         for (let i = 0; i <= numSteps; i++) {
@@ -976,12 +1058,12 @@
 
       /* ── Render Transverse Distance Crossbar ── */
       function drawCrossbar(sDist, steerDeg, col, alpha, isHazardBar = false) {
-        const numSub = 16;
+        const numSub = 18;
         const pts = [];
 
         for (let i = 0; i <= numSub; i++) {
           const frac = i / numSub; // 0 (left) to 1 (right)
-          const lat = -HALF_LW + frac * LANE_WIDTH;
+          const lat = -HALF_TW + frac * TRACK_WIDTH;
           const gp = getGroundPoint(sDist, lat, steerDeg);
           const p = project(gp.x, gp.y);
           if (p && p.y >= HORIZON_Y) pts.push(p);
@@ -1089,7 +1171,7 @@
       function render(timestamp) {
         requestAnimationFrame(render);
 
-        // High-precision frame delta time calculation (capped to prevent leaps after tab backgrounding)
+        // High-precision frame delta time calculation
         const now = performance.now();
         const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameTime) / 1000));
         lastFrameTime = now;
@@ -1106,6 +1188,10 @@
         smoothDistance = smoothDamp(smoothDistance, targetDistanceCm, distVelocity, 0.15, 800, dt);
         distanceCm = smoothDistance;
 
+        // Smooth digital speed damping (responsive 0.08s time constant)
+        smoothSpeed = smoothDamp(smoothSpeed, targetSpeedKmh, speedVelocity, 0.08, 250, dt);
+        speedKmh = smoothSpeed;
+
         const targetHazard = (distanceCm < HAZARD_THRESHOLD) ? 1.0 : 0.0;
         smoothHazard += (targetHazard - smoothHazard) * Math.min(1.0, 10.0 * dt);
         isHazard = smoothHazard > 0.35;
@@ -1114,6 +1200,16 @@
         const ret = document.getElementById('reticle');
         if (ret) {
           ret.style.transform = `translate(-50%, -50%) rotate(${-smoothAngle * 0.22}deg)`;
+        }
+
+        // ── Update Digital Speedometer Cluster (Only numbers changing, in HUD theme) ──
+        const speedValEl = document.getElementById('hud-speed-val');
+        const speedClusterEl = document.getElementById('hud-speed-cluster');
+        if (speedValEl) {
+          speedValEl.textContent = Math.round(smoothSpeed).toString();
+        }
+        if (speedClusterEl) {
+          speedClusterEl.classList.toggle('hazard', isHazard);
         }
 
         // ── Update DOM Telemetry ──
@@ -1156,33 +1252,41 @@
         // ── 0. Draw Horizon Digital Steering Compass Tape ──
         drawHorizonSteeringCompass(smoothAngle, activeColor);
 
-        // ── Compute Geometry Lookahead ──
+        // ── Speed-Dependent Dynamic Lookahead Physics ──
+        // Driver forward preview distance expands as vehicle speed increases:
+        // Stopped (0 km/h) = 15m; Highway (180 km/h) = 33m
+        const speedLookahead = 15.0 + (smoothSpeed / 180.0) * 18.0;
         const steerRad = smoothAngle * Math.PI / 180;
         const kappa = Math.abs(steerRad) > 0.0005 ? Math.tan(steerRad) / WHEELBASE : 0;
         const absR = kappa !== 0 ? Math.abs(1 / kappa) : Infinity;
 
         // Dynamically clamp lookahead arc distance so heading doesn't exceed visual FOV
-        const maxLookahead = Math.min(FAR_S, Math.max(7.0, absR * MAX_HEADING_CHG));
+        const maxLookahead = Math.min(speedLookahead, Math.max(7.5, absR * MAX_HEADING_CHG));
 
-        // ── 1. Draw Left & Right Primary Trajectory Guidelines ──
+        // ── 1. Draw Left & Right Primary Trajectory Guidelines (Wider 2.25m Track) ──
         const leftPts = buildProjectedLine(smoothAngle, -1, maxLookahead);
         const rightPts = buildProjectedLine(smoothAngle, +1, maxLookahead);
 
         strokeGlowPolyline(leftPts, activeColor, 1.0);
         strokeGlowPolyline(rightPts, activeColor, 1.0);
 
-        // ── 2. Draw Transverse Distance Rungs ──
-        const distanceMarkers = [3.5, 7.0, 12.0, 18.0];
-        for (const dM of distanceMarkers) {
+        // ── 2. Forward Velocity Streaming of Distance Crossbars ──
+        const speedMps = (smoothSpeed * 1000) / 3600;
+        streamDistance = (streamDistance + speedMps * dt) % 6.0;
+
+        const rungInterval = 6.0; // 6 meters spacing
+        for (let baseD = 3.0; baseD <= maxLookahead * 0.95; baseD += rungInterval) {
+          let dM = baseD - streamDistance;
+          if (dM < NEAR_S) dM += rungInterval;
           if (dM < maxLookahead * 0.95) {
-            const rungAlpha = Math.max(0.15, 1 - (dM / maxLookahead));
+            const rungAlpha = Math.max(0.14, 1.0 - (dM / maxLookahead));
             drawCrossbar(dM, smoothAngle, activeColor, rungAlpha, false);
           }
         }
 
         // ── 4. Dynamic Ultrasonic Obstacle Ground Barrier ──
         const obstacleMeters = distanceCm / 100.0;
-        if (obstacleMeters >= NEAR_S && obstacleMeters <= Math.min(18.0, maxLookahead)) {
+        if (obstacleMeters >= NEAR_S && obstacleMeters <= Math.min(20.0, maxLookahead)) {
           const isCritical = distanceCm < HAZARD_THRESHOLD;
           drawCrossbar(obstacleMeters, smoothAngle, isCritical ? COLOR_HAZARD : activeColor, 1.0, isCritical);
         }
