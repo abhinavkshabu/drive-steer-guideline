@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>SpatialDrive — Steering Wheel Controller</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/mqtt@5.3.5/dist/mqtt.min.js"></script>
+<style>
+  *,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+  html,body{
+    width:100%;height:100%;overflow:hidden;
+    background:#07090e;
+    font-family:'Share Tech Mono',monospace;
+    -webkit-user-select:none;user-select:none;
+    -webkit-tap-highlight-color:transparent;
+    touch-action:none;
+    color:#fff;
+  }
+  body{
+    display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+    padding:16px 14px 14px;
+    background:radial-gradient(ellipse at 50% 45%, #101624 0%, #06080d 75%, #030407 100%);
+  }
+
+  /* ── Header ── */
+  .header{
+    width:100%;max-width:460px;
+    display:flex;justify-content:space-between;align-items:center;
+    z-index:10;
+  }
+  .brand-group{display:flex;align-items:center;gap:8px}
+  .brand{
+    font-family:'Orbitron',sans-serif;font-weight:800;font-size:12px;
+    letter-spacing:4px;color:#00f0ff;
+    text-shadow:0 0 12px rgba(0,240,255,.4);
+  }
+  .badge-model{
+    font-size:9px;letter-spacing:1px;padding:2px 6px;border-radius:3px;
+    background:rgba(0,240,255,.08);border:1px solid rgba(0,240,255,.25);
+    color:rgba(0,240,255,.8);
+  }
+  .header-actions{display:flex;gap:6px}
+  .chip-btn{
+    font-family:'Orbitron',sans-serif;font-size:8.5px;letter-spacing:1px;
+    padding:5px 8px;border-radius:4px;cursor:pointer;
+    background:rgba(255,255,255,.04);border:1px solid rgba(255,255,255,.12);
+    color:rgba(255,255,255,.6);transition:all .15s ease;
+  }
+  .chip-btn:hover{color:#fff;border-color:rgba(255,255,255,.3)}
+  .chip-btn.active{
+    background:rgba(0,240,255,.16);border-color:#00f0ff;color:#00f0ff;
+    box-shadow:0 0 8px rgba(0,240,255,.25);
+  }
+
+  /* ── Telemetry & Direction Readout Cluster ── */
+  .telemetry-cluster{
+    width:100%;max-width:440px;
+    display:flex;flex-direction:column;align-items:center;
+    margin-top:2px;
+  }
+  .angle-display{
+    display:flex;align-items:baseline;justify-content:center;gap:6px;
+  }
+  .readout-arrow{
+    font-family:'Orbitron',sans-serif;font-weight:700;font-size:24px;
+    color:rgba(255,255,255,.15);transition:color .12s ease, text-shadow .12s ease;
+  }
+  .readout-arrow.active{
+    color:#00f0ff;text-shadow:0 0 14px rgba(0,240,255,.7);
+  }
+  .readout-arrow.hazard.active{
+    color:#FF8C00;text-shadow:0 0 14px rgba(255,140,0,.8);
+  }
+  .readout{
+    font-family:'Orbitron',sans-serif;font-weight:900;
+    font-size:clamp(40px, 11vw, 56px);
+    color:#fff;letter-spacing:-1px;min-width:160px;text-align:center;
+    text-shadow:0 0 20px rgba(0,240,255,.2);
+    transition:color .15s ease, text-shadow .15s ease;
+  }
+  .readout.hazard{
+    color:#FF9D00;text-shadow:0 0 24px rgba(255,140,0,.6);
+  }
+  .direction-sub{
+    font-size:10px;letter-spacing:4px;color:rgba(255,255,255,.35);
+    margin-top:-2px;text-transform:uppercase;
+  }
+
+  /* ── Steering Wheel Stage ── */
+  .wheel-stage{
+    position:relative;width:100%;max-width:440px;
+    display:flex;align-items:center;justify-content:center;
+    margin:auto 0;
+  }
+
+  /* Paddle Shifters (Left & Right) */
+  .paddle-shifter{
+    position:absolute;top:50%;transform:translateY(-50%);
+    width:42px;height:120px;
+    background:linear-gradient(180deg, #1f2735 0%, #0d121c 50%, #171d2b 100%);
+    border:1px solid rgba(255,255,255,.15);
+    border-radius:10px;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;justify-content:space-between;
+    padding:10px 0;z-index:5;
+    box-shadow:0 8px 24px rgba(0,0,0,.6), inset 0 1px 1px rgba(255,255,255,.15);
+    transition:all .1s cubic-bezier(0.16,1,0.3,1);
+  }
+  .paddle-shifter:active{
+    box-shadow:0 2px 10px rgba(0,0,0,.8);
+  }
+  .paddle-left{left:4px;border-top-right-radius:4px;border-bottom-right-radius:4px}
+  .paddle-left:active{transform:translateY(-50%) translateX(-4px) rotate(-4deg)}
+  .paddle-right{right:4px;border-top-left-radius:4px;border-bottom-left-radius:4px}
+  .paddle-right:active{transform:translateY(-50%) translateX(4px) rotate(4deg)}
+  .paddle-label{
+    font-family:'Orbitron',sans-serif;font-weight:800;font-size:16px;
+    color:rgba(0,240,255,.8);text-shadow:0 0 8px rgba(0,240,255,.4);
+  }
+  .paddle-sub{font-size:8px;letter-spacing:1px;color:rgba(255,255,255,.3)}
+
+  /* Circular Interactive Steering Wheel Container */
+  .wheel-container{
+    position:relative;
+    width:min(78vw, 320px);
+    height:min(78vw, 320px);
+    touch-action:none;cursor:grab;
+    display:flex;align-items:center;justify-content:center;
+    filter:drop-shadow(0 14px 30px rgba(0,0,0,.75));
+  }
+  .wheel-container:active{cursor:grabbing}
+
+  /* Angular Gauge Ring */
+  .gauge-ring{
+    position:absolute;width:100%;height:100%;
+    pointer-events:none;z-index:2;
+  }
+
+  /* SVG Wheel Graphic */
+  #wheel-svg{
+    width:100%;height:100%;
+    display:block;
+    transform-origin:50% 50%;
+    will-change:transform;
+    transition:filter .2s ease;
+  }
+  #wheel-svg.hazard{
+    filter:drop-shadow(0 0 18px rgba(255,140,0,.5));
+  }
+
+  /* Center Horn & Snap Button inside Hub */
+  .horn-hitbox{
+    position:absolute;
+    width:32%;height:32%;
+    border-radius:50%;
+    cursor:pointer;z-index:20;
+    background:transparent;
+    display:flex;align-items:center;justify-content:center;
+  }
+
+  /* Quick Degree Tick Labels around Wheel */
+  .wheel-angle-ticks{
+    position:absolute;bottom:-20px;left:0;right:0;
+    display:flex;justify-content:space-between;
+    font-size:9px;color:rgba(255,255,255,.25);letter-spacing:1px;
+    padding:0 24px;pointer-events:none;
+  }
+
+  /* ── Proximity Hazard Section ── */
+  .distance-section{
+    width:100%;max-width:440px;
+    background:rgba(14,18,26,.65);backdrop-filter:blur(10px);
+    border:1px solid rgba(255,255,255,.08);border-radius:10px;
+    padding:12px 14px;display:flex;flex-direction:column;align-items:center;gap:8px;
+    z-index:10;
+  }
+  .distance-header{
+    width:100%;display:flex;justify-content:space-between;align-items:center;
+    font-size:9.5px;letter-spacing:2px;color:rgba(255,255,255,.3);
+  }
+  .dist-stepper{
+    display:flex;align-items:center;gap:18px;
+  }
+  .dist-btn{
+    width:36px;height:36px;border-radius:50%;
+    background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.15);
+    color:#fff;font-family:'Orbitron',sans-serif;font-size:16px;
+    display:flex;align-items:center;justify-content:center;
+    cursor:pointer;transition:all .15s ease;
+  }
+  .dist-btn:hover{background:rgba(0,240,255,.15);border-color:#00f0ff}
+  .dist-val{
+    font-family:'Orbitron',sans-serif;font-weight:700;font-size:22px;
+    min-width:85px;text-align:center;color:#fff;
+    transition:color .2s ease;
+  }
+  .dist-val.hazard{color:#FF8C00;text-shadow:0 0 14px rgba(255,140,0,.6)}
+
+  /* Presets */
+  .presets{display:flex;gap:6px;width:100%;justify-content:center}
+  .preset-btn{
+    flex:1;max-width:64px;padding:5px 0;border-radius:4px;
+    background:rgba(255,255,255,.03);border:1px solid rgba(255,255,255,.1);
+    color:rgba(255,255,255,.5);font-size:9px;font-family:'Orbitron',sans-serif;
+    cursor:pointer;text-align:center;transition:all .15s ease;
+  }
+  .preset-btn.hazard-preset{
+    border-color:rgba(255,140,0,.3);color:rgba(255,140,0,.7);
+  }
+  .preset-btn:hover{background:rgba(255,255,255,.08);color:#fff}
+
+  /* ── Bottom Status Bar ── */
+  .bottom-bar{
+    width:100%;max-width:440px;
+    display:flex;justify-content:space-between;align-items:center;
+    font-size:8.5px;letter-spacing:1.5px;color:rgba(255,255,255,.25);
+    padding-top:6px;z-index:10;
+  }
+  .status-dot{
+    display:inline-block;width:6px;height:6px;border-radius:50%;
+    background:#00f0ff;box-shadow:0 0 6px #00f0ff;margin-right:6px;
+  }
+</style>
+</head>
+<body>
+
+<!-- Header -->
+<div class="header">
+  <div class="brand-group">
+    <div class="brand">SPATIALDRIVE</div>
+    <div class="badge-model">WHEEL</div>
+  </div>
+  <div class="header-actions">
+    <button class="chip-btn active" id="btn-autocenter" title="Toggle Auto Return to Center Spring">SPRING: ON</button>
+    <button class="chip-btn" id="btn-gyro" title="Toggle Phone Gyroscope / Tilt Steering">GYRO: OFF</button>
+    <button class="chip-btn" id="btn-audio" title="Audio Alert & Mechanical Clicks">AUDIO: ON</button>
+  </div>
+</div>
+
+<!-- Telemetry & Dynamic Direction Readout -->
+<div class="telemetry-cluster">
+  <div class="angle-display">
+    <span class="readout-arrow" id="arrow-left">◀</span>
+    <div class="readout" id="angle-readout">0.0°</div>
+    <span class="readout-arrow" id="arrow-right">▶</span>
+  </div>
+  <div class="direction-sub" id="direction-sub">CENTERED</div>
+</div>
+
+<!-- Main Steering Wheel Stage -->
+<div class="wheel-stage">
+  <!-- Left Paddle Shifter (-5°) -->
+  <button class="paddle-shifter paddle-left" id="paddle-left" title="Shift Left −5°">
+    <span class="paddle-label">−</span>
+    <span class="paddle-sub">5°</span>
+  </button>
+
+  <!-- Interactive Steering Wheel -->
+  <div class="wheel-container" id="wheel-container">
+    <!-- Center Horn Hitbox (Double-click or tap center to snap 0° & horn) -->
+    <div class="horn-hitbox" id="horn-hitbox" title="Tap Horn / Snap Re-Center [0°]"></div>
+
+    <!-- Scalable High-Fidelity SVG Steering Wheel -->
+    <svg id="wheel-svg" viewBox="0 0 340 340" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <!-- Outer Rim 3D Radial Depth -->
+        <radialGradient id="rimGrad" cx="50%" cy="50%" r="50%">
+          <stop offset="78%" stop-color="#1c212c"/>
+          <stop offset="88%" stop-color="#2d3546"/>
+          <stop offset="94%" stop-color="#141822"/>
+          <stop offset="100%" stop-color="#0a0c12"/>
+        </radialGradient>
+
+        <!-- Inner Rim Shadow -->
+        <radialGradient id="innerBevel" cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stop-color="#080b11"/>
+          <stop offset="85%" stop-color="#101520"/>
+          <stop offset="100%" stop-color="#2a3344"/>
+        </radialGradient>
+
+        <!-- Brushed Titanium Spoke Gradient -->
+        <linearGradient id="spokeGrad" x1="0" y1="0" x2="1" y2="1">
+          <stop offset="0%" stop-color="#2c3444"/>
+          <stop offset="45%" stop-color="#181e2b"/>
+          <stop offset="80%" stop-color="#343d50"/>
+          <stop offset="100%" stop-color="#121620"/>
+        </linearGradient>
+
+        <!-- Spoke Cutout Accent -->
+        <linearGradient id="slotGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="#07090e"/>
+          <stop offset="100%" stop-color="#151b27"/>
+        </linearGradient>
+
+        <!-- Center Boss Carbon Texture Pattern -->
+        <pattern id="carbonPattern" width="6" height="6" patternUnits="userSpaceOnUse">
+          <rect width="6" height="6" fill="#121620"/>
+          <polygon points="0,0 3,0 6,3 6,6 3,6 0,3" fill="#181e2c"/>
+          <polygon points="3,0 6,0 6,3" fill="#202738"/>
+          <polygon points="0,3 3,6 0,6" fill="#0d1118"/>
+        </pattern>
+
+        <!-- Perforated Grip Texture Pattern -->
+        <pattern id="perforatedGrip" width="8" height="8" patternUnits="userSpaceOnUse">
+          <circle cx="4" cy="4" r="1.1" fill="#0b0e14" opacity="0.8"/>
+        </pattern>
+      </defs>
+
+      <!-- ── 1. OUTER RIM BODY ── -->
+      <!-- Shadow base -->
+      <circle cx="170" cy="170" r="152" fill="#06080d" stroke="#121620" stroke-width="2"/>
+      
+      <!-- Primary Wheel Rim Tube -->
+      <circle cx="170" cy="170" r="139" stroke="url(#rimGrad)" stroke-width="27"/>
+      
+      <!-- Ergonomic 9 & 3 o'clock Thumb Grip Overlays with Perforation -->
+      <path d="M 31 130 A 139 139 0 0 1 31 210" stroke="#181d27" stroke-width="29" stroke-linecap="round"/>
+      <path d="M 31 130 A 139 139 0 0 1 31 210" stroke="url(#perforatedGrip)" stroke-width="29" stroke-linecap="round"/>
+      
+      <path d="M 309 130 A 139 139 0 0 0 309 210" stroke="#181d27" stroke-width="29" stroke-linecap="round"/>
+      <path d="M 309 130 A 139 139 0 0 0 309 210" stroke="url(#perforatedGrip)" stroke-width="29" stroke-linecap="round"/>
+
+      <!-- Inner Rim Chrome Ring Trim -->
+      <circle cx="170" cy="170" r="125" stroke="rgba(255,255,255,.14)" stroke-width="1.2"/>
+
+      <!-- ── 2. 12 O'CLOCK RACING CENTERING STRIPE ── -->
+      <rect id="racing-stripe" x="165" y="17" width="10" height="26" rx="2" fill="#00f0ff" filter="drop-shadow(0 0 6px #00f0ff)"/>
+
+      <!-- ── 3. SPOKES STRUCTURE (3-SPOKE MOTORSPORT) ── -->
+      <!-- Left Horizontal Spoke -->
+      <path d="M 124 156 L 46 158 L 46 182 L 124 184 Z" fill="url(#spokeGrad)" stroke="#131720" stroke-width="1"/>
+      <!-- Left Spoke Weight Slot -->
+      <rect x="58" y="166" width="50" height="8" rx="4" fill="url(#slotGrad)" stroke="rgba(255,255,255,.08)"/>
+
+      <!-- Right Horizontal Spoke -->
+      <path d="M 216 156 L 294 158 L 294 182 L 216 184 Z" fill="url(#spokeGrad)" stroke="#131720" stroke-width="1"/>
+      <!-- Right Spoke Weight Slot -->
+      <rect x="232" y="166" width="50" height="8" rx="4" fill="url(#slotGrad)" stroke="rgba(255,255,255,.08)"/>
+
+      <!-- Bottom Vertical Spoke -->
+      <path d="M 158 214 L 157 292 L 183 292 L 182 214 Z" fill="url(#spokeGrad)" stroke="#131720" stroke-width="1"/>
+      <!-- Bottom Spoke Weight Slot -->
+      <rect x="166" y="228" width="8" height="50" rx="4" fill="url(#slotGrad)" stroke="rgba(255,255,255,.08)"/>
+
+      <!-- Spoke Rivets / Bolts -->
+      <circle cx="120" cy="160" r="2.2" fill="#4a5568" stroke="#121620"/>
+      <circle cx="120" cy="180" r="2.2" fill="#4a5568" stroke="#121620"/>
+      <circle cx="220" cy="160" r="2.2" fill="#4a5568" stroke="#121620"/>
+      <circle cx="220" cy="180" r="2.2" fill="#4a5568" stroke="#121620"/>
+      <circle cx="162" cy="220" r="2.2" fill="#4a5568" stroke="#121620"/>
+      <circle cx="178" cy="220" r="2.2" fill="#4a5568" stroke="#121620"/>
+
+      <!-- ── 4. CENTER HORN BOSS / HUB ── -->
+      <!-- Outer Hub Metal Bezel -->
+      <circle cx="170" cy="170" r="50" fill="#181d27" stroke="rgba(0,240,255,.4)" stroke-width="2" id="hub-ring"/>
+      <!-- Inner Carbon Disc -->
+      <circle cx="170" cy="170" r="44" fill="url(#carbonPattern)"/>
+
+      <!-- Telemetry Steering LEDs Arc across Top Hub -->
+      <!-- Left LEDs: -40°, -30°, -20°, -10° -->
+      <circle id="led-l4" cx="132" cy="144" r="2.5" fill="#331111"/>
+      <circle id="led-l3" cx="140" cy="136" r="2.5" fill="#332211"/>
+      <circle id="led-l2" cx="150" cy="131" r="2.5" fill="#112d33"/>
+      <circle id="led-l1" cx="160" cy="128" r="2.5" fill="#113322"/>
+      <!-- Center LED: 0° -->
+      <circle id="led-c"  cx="170" cy="127" r="3" fill="#00ff88" filter="drop-shadow(0 0 4px #00ff88)"/>
+      <!-- Right LEDs: +10°, +20°, +30°, +40° -->
+      <circle id="led-r1" cx="180" cy="128" r="2.5" fill="#113322"/>
+      <circle id="led-r2" cx="190" cy="131" r="2.5" fill="#112d33"/>
+      <circle id="led-r3" cx="200" cy="136" r="2.5" fill="#332211"/>
+      <circle id="led-r4" cx="208" cy="144" r="2.5" fill="#331111"/>
+
+      <!-- Center Logo & Emblem -->
+      <!-- Stylized AR Head-Up Trajectory Monogram -->
+      <path d="M 160 162 L 170 148 L 180 162" stroke="#00f0ff" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" id="logo-arrow"/>
+      <path d="M 164 168 L 170 159 L 176 168" stroke="rgba(0,240,255,.5)" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+      
+      <!-- Center Horn Text -->
+      <text x="170" y="186" text-anchor="middle" font-family="'Orbitron', sans-serif" font-weight="700" font-size="7.5" letter-spacing="1.5" fill="rgba(255,255,255,.7)">HORN</text>
+      <text x="170" y="197" text-anchor="middle" font-family="'Share Tech Mono', monospace" font-size="7" letter-spacing="1" fill="rgba(0,240,255,.6)">SNAP 0°</text>
+    </svg>
+  </div>
+
+  <!-- Right Paddle Shifter (+5°) -->
+  <button class="paddle-shifter paddle-right" id="paddle-right" title="Shift Right +5°">
+    <span class="paddle-label">+</span>
+    <span class="paddle-sub">5°</span>
+  </button>
+</div>
+
+<!-- Quick Angle Ticks Display -->
+<div class="wheel-angle-ticks">
+  <span>−45°</span>
+  <span>−30°</span>
+  <span>−15°</span>
+  <span>0°</span>
+  <span>+15°</span>
+  <span>+30°</span>
+  <span>+45°</span>
+</div>
+
+<!-- Ultrasonic Proximity Hazard Section -->
+<div class="distance-section">
+  <div class="distance-header">
+    <span>ULTRASONIC PROXIMITY</span>
+    <span id="hazard-tag" style="color:rgba(255,255,255,.3)">NORMAL</span>
+  </div>
+
+  <div class="dist-stepper">
+    <button class="dist-btn" id="dist-down">−</button>
+    <div class="dist-val" id="dist-val">55 CM</div>
+    <button class="dist-btn" id="dist-up">+</button>
+  </div>
+
+  <div class="presets">
+    <button class="preset-btn hazard-preset" data-dist="10">10 CM</button>
+    <button class="preset-btn hazard-preset" data-dist="18">18 CM</button>
+    <button class="preset-btn" data-dist="35">35 CM</button>
+    <button class="preset-btn" data-dist="75">75 CM</button>
+    <button class="preset-btn" data-dist="150">150 CM</button>
+  </div>
+</div>
+
+<!-- Bottom Status -->
+<div class="bottom-bar">
+  <div>
+    <span class="status-dot" id="conn-dot"></span>
+    <span id="conn-text">BROADCAST & CLOUD SYNC</span>
+  </div>
+  <div id="room-display">ROOM: SPATIAL-77</div>
+</div>
+
+<script>
+(() => {
+  'use strict';
+
+  /* ════════════════════════════════════════════════════════════════════════
+   * 1. STATE & TELEMETRY BUS
+   * ════════════════════════════════════════════════════════════════════════ */
+  let steerAngle = 0.0;     // degrees: -45.0 to +45.0
+  let distanceCm = 55;      // ultrasonic cm
+  const HAZARD_THRESH = 20; // cm: hazard trigger threshold
+  
+  let autoCenter = true;    // spring back to 0° on release
+  let gyroActive = false;   // phone tilt mode
+  let audioEnabled = true;  // audio feedback & horn
+  let springAnimId = null;  // spring animation request id
+
+  const readout        = document.getElementById('angle-readout');
+  const arrowLeft      = document.getElementById('arrow-left');
+  const arrowRight     = document.getElementById('arrow-right');
+  const directionSub   = document.getElementById('direction-sub');
+  
+  const wheelContainer = document.getElementById('wheel-container');
+  const wheelSvg       = document.getElementById('wheel-svg');
+  const racingStripe   = document.getElementById('racing-stripe');
+  const hubRing        = document.getElementById('hub-ring');
+  const logoArrow      = document.getElementById('logo-arrow');
+  
+  const distVal        = document.getElementById('dist-val');
+  const hazardTag      = document.getElementById('hazard-tag');
+
+  /* ── Rev / Telemetry Steering LEDs ── */
+  const ledL4 = document.getElementById('led-l4');
+  const ledL3 = document.getElementById('led-l3');
+  const ledL2 = document.getElementById('led-l2');
+  const ledL1 = document.getElementById('led-l1');
+  const ledC  = document.getElementById('led-c');
+  const ledR1 = document.getElementById('led-r1');
+  const ledR2 = document.getElementById('led-r2');
+  const ledR3 = document.getElementById('led-r3');
+  const ledR4 = document.getElementById('led-r4');
+
+  /* ════════════════════════════════════════════════════════════════════════
+   * 2. SYNTHESIZED WEB AUDIO & HAPTICS
+   * ════════════════════════════════════════════════════════════════════════ */
+  let audioCtx = null;
+  function getAudioContext() {
+    if (!audioCtx) {
+      audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    }
+    if (audioCtx.state === 'suspended') {
+      audioCtx.resume();
+    }
+    return audioCtx;
+  }
+
+  // Dual-tone Automotive Horn
+  function playHorn() {
+    if (!audioEnabled) return;
+    try {
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+      
+      const osc1 = ctx.createOscillator();
+      const osc2 = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc1.type = 'triangle';
+      osc2.type = 'sawtooth';
+      osc1.frequency.setValueAtTime(420, now); // Low note
+      osc2.frequency.setValueAtTime(530, now); // High note
+
+      gain.gain.setValueAtTime(0.001, now);
+      gain.gain.linearRampToValueAtTime(0.12, now + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.22);
+
+      osc1.connect(gain);
+      osc2.connect(gain);
+      gain.connect(ctx.destination);
+
+      osc1.start(now);
+      osc2.start(now);
+      osc1.stop(now + 0.22);
+      osc2.stop(now + 0.22);
+
+      if ('vibrate' in navigator) navigator.vibrate(60);
+    } catch (_) {}
+  }
+
+  // Subtle Mechanical Steering Ratchet Tick
+  function playRatchetClick() {
+    if (!audioEnabled) return;
+    try {
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(900, now);
+      osc.frequency.exponentialRampToValueAtTime(300, now + 0.02);
+
+      gain.gain.setValueAtTime(0.025, now);
+      gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.02);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.02);
+    } catch (_) {}
+  }
+
+  // Ultrasonic Proximity Hazard Warning Beep
+  function playHazardBeep() {
+    if (!audioEnabled) return;
+    try {
+      const ctx = getAudioContext();
+      const now = ctx.currentTime;
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+
+      osc.type = 'square';
+      osc.frequency.setValueAtTime(880, now);
+      gain.gain.setValueAtTime(0.08, now);
+      gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+      osc.start(now);
+      osc.stop(now + 0.12);
+
+      if ('vibrate' in navigator) navigator.vibrate([80, 40, 80]);
+    } catch (_) {}
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+   * 3. DATA TRANSMISSION (BROADCAST & MQTT)
+   * ════════════════════════════════════════════════════════════════════════ */
+  let bc;
+  try {
+    bc = new BroadcastChannel('spatialdrive');
+  } catch (_) {}
+
+  const ROOM_CODE = 'SPATIAL-77';
+  let mqttClient = null;
+  try {
+    mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+      clientId: 'ctrl_' + Math.random().toString(16).slice(2, 8),
+      keepalive: 30,
+      reconnectPeriod: 2000
+    });
+  } catch (_) {}
+
+  function transmit() {
+    const payload = { angle: Number(steerAngle.toFixed(1)), distance: distanceCm };
+    // 1. Local Same-Device BroadcastChannel
+    if (bc) {
+      try { bc.postMessage(payload); } catch (_) {}
+    }
+    // 2. Cross-Device Cloud MQTT
+    if (mqttClient && mqttClient.connected) {
+      try {
+        mqttClient.publish(`spatialdrive/${ROOM_CODE}/telemetry`, JSON.stringify(payload));
+      } catch (_) {}
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+   * 4. UI & STEERING WHEEL RENDERER
+   * ════════════════════════════════════════════════════════════════════════ */
+  let prevHazard = false;
+  let lastDetentAngle = 0;
+
+  function updateUI() {
+    const isHazard = distanceCm < HAZARD_THRESH;
+
+    // Trigger hazard alert sound/vibe on state change
+    if (isHazard && !prevHazard) {
+      playHazardBeep();
+    }
+    prevHazard = isHazard;
+
+    // ── 1. Rotate SVG Steering Wheel ──
+    wheelSvg.style.transform = `rotate(${steerAngle}deg)`;
+    wheelSvg.classList.toggle('hazard', isHazard);
+
+    // Hazard visual styling on wheel accents
+    if (isHazard) {
+      racingStripe.setAttribute('fill', '#FF8C00');
+      racingStripe.setAttribute('filter', 'drop-shadow(0 0 8px #FF8C00)');
+      hubRing.setAttribute('stroke', '#FF8C00');
+      logoArrow.setAttribute('stroke', '#FF8C00');
+    } else {
+      racingStripe.setAttribute('fill', '#00f0ff');
+      racingStripe.setAttribute('filter', 'drop-shadow(0 0 6px #00f0ff)');
+      hubRing.setAttribute('stroke', 'rgba(0,240,255,.4)');
+      logoArrow.setAttribute('stroke', '#00f0ff');
+    }
+
+    // ── 2. Telemetry Readout & Direction Arrows ──
+    const sign = steerAngle > 0.05 ? '+' : '';
+    readout.textContent = `${sign}${steerAngle.toFixed(1)}°`;
+    readout.classList.toggle('hazard', isHazard);
+
+    const isLeft = steerAngle < -0.4;
+    const isRight = steerAngle > 0.4;
+    arrowLeft.classList.toggle('active', isLeft);
+    arrowRight.classList.toggle('active', isRight);
+    arrowLeft.classList.toggle('hazard', isHazard);
+    arrowRight.classList.toggle('hazard', isHazard);
+
+    if (Math.abs(steerAngle) < 0.5) {
+      directionSub.textContent = 'CENTERED';
+      directionSub.style.color = isHazard ? '#FF8C00' : 'rgba(0,240,255,.7)';
+    } else if (steerAngle < 0) {
+      directionSub.textContent = 'STEER LEFT';
+      directionSub.style.color = isHazard ? '#FF8C00' : 'rgba(255,255,255,.6)';
+    } else {
+      directionSub.textContent = 'STEER RIGHT';
+      directionSub.style.color = isHazard ? '#FF8C00' : 'rgba(255,255,255,.6)';
+    }
+
+    // ── 3. Steering Wheel Rev / Angle LEDs ──
+    updateWheelLeds(steerAngle);
+
+    // ── 4. Distance Telemetry Section ──
+    distVal.textContent = `${distanceCm} CM`;
+    distVal.classList.toggle('hazard', isHazard);
+    if (hazardTag) {
+      hazardTag.textContent = isHazard ? '⚠ PROXIMITY HAZARD' : 'NORMAL';
+      hazardTag.style.color = isHazard ? '#FF8C00' : 'rgba(255,255,255,.3)';
+    }
+
+    // Transmit over bus
+    transmit();
+  }
+
+  // Update Steering Telemetry LEDs
+  function updateWheelLeds(ang) {
+    const abs = Math.abs(ang);
+    const isNeg = ang < -1.0;
+    const isPos = ang > 1.0;
+
+    // Center LED
+    ledC.setAttribute('fill', abs < 2.0 ? '#00ff88' : '#113322');
+    ledC.setAttribute('filter', abs < 2.0 ? 'drop-shadow(0 0 4px #00ff88)' : 'none');
+
+    // Left LEDs (-10°, -20°, -30°, -40°)
+    ledL1.setAttribute('fill', isNeg && abs >= 8  ? '#00ff88' : '#113322');
+    ledL2.setAttribute('fill', isNeg && abs >= 18 ? '#00f0ff' : '#112d33');
+    ledL3.setAttribute('fill', isNeg && abs >= 28 ? '#ffaa00' : '#332211');
+    ledL4.setAttribute('fill', isNeg && abs >= 38 ? '#ff3333' : '#331111');
+
+    // Right LEDs (+10°, +20°, +30°, +40°)
+    ledR1.setAttribute('fill', isPos && abs >= 8  ? '#00ff88' : '#113322');
+    ledR2.setAttribute('fill', isPos && abs >= 18 ? '#00f0ff' : '#112d33');
+    ledR3.setAttribute('fill', isPos && abs >= 28 ? '#ffaa00' : '#332211');
+    ledR4.setAttribute('fill', isPos && abs >= 38 ? '#ff3333' : '#331111');
+  }
+
+  // Check Ratchet Audio Feedback Detents (every 4.5 degrees)
+  function checkDetentSounds(oldAng, newAng) {
+    if (Math.floor(Math.abs(newAng) / 4.5) !== Math.floor(Math.abs(oldAng) / 4.5)) {
+      playRatchetClick();
+    }
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+   * 5. ROTATIONAL STEERING WHEEL TOUCH & MOUSE INTERACTION
+   * ════════════════════════════════════════════════════════════════════════ */
+  let isDragging = false;
+  let lastPointerAngle = 0;
+
+  function getAngleFromCenter(clientX, clientY) {
+    const rect = wheelContainer.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    const dx = clientX - cx;
+    const dy = clientY - cy;
+    return Math.atan2(dy, dx) * 180 / Math.PI; // -180° to +180°
+  }
+
+  wheelContainer.addEventListener('pointerdown', (e) => {
+    if (gyroActive) return;
+    if (e.target.closest('#horn-hitbox')) return; // horn handles its own tap
+    isDragging = true;
+    wheelContainer.setPointerCapture(e.pointerId);
+    if (springAnimId) {
+      cancelAnimationFrame(springAnimId);
+      springAnimId = null;
+    }
+    lastPointerAngle = getAngleFromCenter(e.clientX, e.clientY);
+  });
+
+  wheelContainer.addEventListener('pointermove', (e) => {
+    if (!isDragging || gyroActive) return;
+    const currentAngle = getAngleFromCenter(e.clientX, e.clientY);
+    let delta = currentAngle - lastPointerAngle;
+    
+    // Handle wrap across 180° / -180° boundary
+    while (delta > 180) delta -= 360;
+    while (delta < -180) delta += 360;
+
+    const oldAngle = steerAngle;
+    steerAngle = Math.max(-45.0, Math.min(45.0, steerAngle + delta));
+    lastPointerAngle = currentAngle;
+
+    checkDetentSounds(oldAngle, steerAngle);
+    updateUI();
+  });
+
+  function stopDrag() {
+    if (!isDragging) return;
+    isDragging = false;
+    if (autoCenter && !gyroActive) {
+      animateReturnToCenter();
+    }
+  }
+  wheelContainer.addEventListener('pointerup', stopDrag);
+  wheelContainer.addEventListener('pointercancel', stopDrag);
+
+  // Center Horn & Snap Re-Center
+  const hornHitbox = document.getElementById('horn-hitbox');
+  hornHitbox.addEventListener('click', (e) => {
+    e.stopPropagation();
+    playHorn();
+    snapToCenter();
+  });
+
+  function snapToCenter() {
+    if (springAnimId) cancelAnimationFrame(springAnimId);
+    steerAngle = 0.0;
+    updateUI();
+  }
+
+  // Smooth Spring Back to Center
+  function animateReturnToCenter() {
+    if (springAnimId) cancelAnimationFrame(springAnimId);
+    function spring() {
+      if (isDragging || gyroActive) return;
+      steerAngle += (0 - steerAngle) * 0.22;
+      if (Math.abs(steerAngle) < 0.2) {
+        steerAngle = 0.0;
+        updateUI();
+        springAnimId = null;
+        return;
+      }
+      updateUI();
+      springAnimId = requestAnimationFrame(spring);
+    }
+    springAnimId = requestAnimationFrame(spring);
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+   * 6. PADDLE SHIFTERS & QUICK CONTROLS
+   * ════════════════════════════════════════════════════════════════════════ */
+  const paddleLeft = document.getElementById('paddle-left');
+  const paddleRight = document.getElementById('paddle-right');
+
+  paddleLeft.addEventListener('click', () => {
+    if (springAnimId) cancelAnimationFrame(springAnimId);
+    steerAngle = Math.max(-45.0, steerAngle - 5.0);
+    playRatchetClick();
+    updateUI();
+    if (autoCenter && !isDragging && !gyroActive) animateReturnToCenter();
+  });
+
+  paddleRight.addEventListener('click', () => {
+    if (springAnimId) cancelAnimationFrame(springAnimId);
+    steerAngle = Math.min(45.0, steerAngle + 5.0);
+    playRatchetClick();
+    updateUI();
+    if (autoCenter && !isDragging && !gyroActive) animateReturnToCenter();
+  });
+
+  // Auto-Center Toggle Button
+  const btnAutoCenter = document.getElementById('btn-autocenter');
+  btnAutoCenter.addEventListener('click', () => {
+    autoCenter = !autoCenter;
+    btnAutoCenter.classList.toggle('active', autoCenter);
+    btnAutoCenter.textContent = `SPRING: ${autoCenter ? 'ON' : 'OFF'}`;
+    if (autoCenter && !isDragging && !gyroActive) animateReturnToCenter();
+  });
+
+  /* ════════════════════════════════════════════════════════════════════════
+   * 7. KEYBOARD REALISTIC STEERING
+   * ════════════════════════════════════════════════════════════════════════ */
+  const keysDown = {};
+  window.addEventListener('keydown', (e) => {
+    if (['ArrowLeft', 'ArrowRight', 'a', 'A', 'd', 'D', ' ', '0', 'c', 'C'].includes(e.key)) {
+      e.preventDefault();
+    }
+    keysDown[e.key.toLowerCase()] = true;
+    if (e.key === ' ' || e.key === '0' || e.key.toLowerCase() === 'c') {
+      snapToCenter();
+      playHorn();
+    }
+  });
+
+  window.addEventListener('keyup', (e) => {
+    keysDown[e.key.toLowerCase()] = false;
+    if (autoCenter && !keysDown['arrowleft'] && !keysDown['arrowright'] && !keysDown['a'] && !keysDown['d']) {
+      animateReturnToCenter();
+    }
+  });
+
+  function keyboardSteerTick() {
+    if (keysDown['arrowleft'] || keysDown['a']) {
+      if (springAnimId) cancelAnimationFrame(springAnimId);
+      const old = steerAngle;
+      steerAngle = Math.max(-45.0, steerAngle - 2.0);
+      checkDetentSounds(old, steerAngle);
+      updateUI();
+    } else if (keysDown['arrowright'] || keysDown['d']) {
+      if (springAnimId) cancelAnimationFrame(springAnimId);
+      const old = steerAngle;
+      steerAngle = Math.min(45.0, steerAngle + 2.0);
+      checkDetentSounds(old, steerAngle);
+      updateUI();
+    }
+    requestAnimationFrame(keyboardSteerTick);
+  }
+  requestAnimationFrame(keyboardSteerTick);
+
+  /* ════════════════════════════════════════════════════════════════════════
+   * 8. PHONE GYROSCOPE (TILT TO STEER)
+   * ════════════════════════════════════════════════════════════════════════ */
+  const btnGyro = document.getElementById('btn-gyro');
+
+  async function toggleGyro() {
+    if (!gyroActive) {
+      if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+        try {
+          const res = await DeviceOrientationEvent.requestPermission();
+          if (res !== 'granted') return;
+        } catch (_) { return; }
+      }
+      gyroActive = true;
+      btnGyro.classList.add('active');
+      btnGyro.textContent = 'GYRO: ACTIVE';
+      window.addEventListener('deviceorientation', handleOrientation);
+    } else {
+      gyroActive = false;
+      btnGyro.classList.remove('active');
+      btnGyro.textContent = 'GYRO: OFF';
+      window.removeEventListener('deviceorientation', handleOrientation);
+      snapToCenter();
+    }
+  }
+  btnGyro.addEventListener('click', toggleGyro);
+
+  function handleOrientation(e) {
+    if (!gyroActive) return;
+    const gamma = e.gamma || 0; // -90 to +90 deg tilt
+    const old = steerAngle;
+    steerAngle = Math.max(-45.0, Math.min(45.0, gamma * 1.1));
+    checkDetentSounds(old, steerAngle);
+    updateUI();
+  }
+
+  /* ════════════════════════════════════════════════════════════════════════
+   * 9. AUDIO TOGGLE & DISTANCE STEPPERS
+   * ════════════════════════════════════════════════════════════════════════ */
+  const btnAudio = document.getElementById('btn-audio');
+  btnAudio.addEventListener('click', () => {
+    audioEnabled = !audioEnabled;
+    btnAudio.textContent = `AUDIO: ${audioEnabled ? 'ON' : 'OFF'}`;
+    btnAudio.classList.toggle('active', audioEnabled);
+    if (audioEnabled) getAudioContext();
+  });
+
+  document.getElementById('dist-down').addEventListener('click', () => {
+    distanceCm = Math.max(2, distanceCm - 5);
+    updateUI();
+  });
+  document.getElementById('dist-up').addEventListener('click', () => {
+    distanceCm = Math.min(250, distanceCm + 5);
+    updateUI();
+  });
+
+  document.querySelectorAll('.preset-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      distanceCm = parseInt(btn.getAttribute('data-dist'), 10);
+      updateUI();
+    });
+  });
+
+  /* ── Periodic Sync Heartbeat ── */
+  setInterval(transmit, 40);
+
+  // Initial render
+  requestAnimationFrame(() => updateUI());
+  window.addEventListener('resize', () => updateUI());
+})();
+</script>
+</body>
+</html>
