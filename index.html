@@ -539,7 +539,7 @@
       <span class="qr-caption">SCAN WITH MOBILE 1</span>
 
       <div class="card-actions">
-        <a id="link-ctrl-launch" href="controller.html" class="btn-primary ctrl-btn" target="_blank">
+        <a id="link-ctrl-launch" href="controller.html" class="btn-primary ctrl-btn" target="_blank" rel="noopener noreferrer">
           <span>🎮 LAUNCH CONTROLLER</span>
         </a>
         <button class="btn-secondary" id="btn-copy-ctrl">📋 COPY CONTROLLER LINK</button>
@@ -558,7 +558,7 @@
       <span class="qr-caption">SCAN WITH MOBILE 2</span>
 
       <div class="card-actions">
-        <a id="link-hud-launch" href="hud.html" class="btn-primary hud-btn" target="_blank">
+        <a id="link-hud-launch" href="hud.html" class="btn-primary hud-btn" target="_blank" rel="noopener noreferrer">
           <span>🏎️ LAUNCH HUD DISPLAY</span>
         </a>
         <button class="btn-secondary" id="btn-copy-hud">📋 COPY HUD LINK</button>
@@ -627,10 +627,20 @@
 (() => {
   'use strict';
 
-  // 1. Base URL Resolution
-  const origin = window.location.origin;
-  const path = window.location.pathname.replace(/\/index\.html$/i, '').replace(/\/+$/, '');
-  const baseUrl = `${origin}${path}`;
+  // 1. Safe Base URL Resolution (Works on file://, localhost, and GitHub Pages)
+  function getAbsoluteBase() {
+    let loc = window.location.href.split('?')[0].split('#')[0];
+    if (window.location.protocol === 'file:') {
+      return loc.substring(0, loc.lastIndexOf('/') + 1);
+    }
+    if (loc.endsWith('.html') || loc.endsWith('.htm')) {
+      return loc.substring(0, loc.lastIndexOf('/') + 1);
+    }
+    if (!loc.endsWith('/')) {
+      return loc + '/';
+    }
+    return loc;
+  }
 
   // 2. Room Code Management
   const roomInput = document.getElementById('room-code-input');
@@ -642,26 +652,34 @@
   currentRoom = currentRoom.toUpperCase().trim();
   roomInput.value = currentRoom;
 
-  // 3. QR Code Instances
+  // 3. QR Code Instances & Link Builders
   let qrCtrl = null;
   let qrHud = null;
 
   function getControllerUrl() {
-    return `${baseUrl}/controller.html?room=${encodeURIComponent(currentRoom)}`;
+    try {
+      return new URL(`controller.html?room=${encodeURIComponent(currentRoom)}`, getAbsoluteBase()).href;
+    } catch (_) {
+      return `controller.html?room=${encodeURIComponent(currentRoom)}`;
+    }
   }
   function getHudUrl() {
-    return `${baseUrl}/hud.html?room=${encodeURIComponent(currentRoom)}`;
+    try {
+      return new URL(`hud.html?room=${encodeURIComponent(currentRoom)}`, getAbsoluteBase()).href;
+    } catch (_) {
+      return `hud.html?room=${encodeURIComponent(currentRoom)}`;
+    }
   }
 
   function updateLinksAndQRs() {
     const ctrlUrl = getControllerUrl();
     const hudUrl = getHudUrl();
 
-    // Update buttons
+    // Direct relative links for buttons on this device (NEVER 404 on file://, localhost, or GitHub Pages)
     const linkCtrlLaunch = document.getElementById('link-ctrl-launch');
     const linkHudLaunch = document.getElementById('link-hud-launch');
-    if (linkCtrlLaunch) linkCtrlLaunch.href = ctrlUrl;
-    if (linkHudLaunch) linkHudLaunch.href = hudUrl;
+    if (linkCtrlLaunch) linkCtrlLaunch.href = `controller.html?room=${encodeURIComponent(currentRoom)}`;
+    if (linkHudLaunch) linkHudLaunch.href = `hud.html?room=${encodeURIComponent(currentRoom)}`;
 
     // Render / Update QR Codes
     const ctrlBox = document.getElementById('qr-ctrl-box');
