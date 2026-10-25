@@ -232,6 +232,7 @@
     <div class="badge-model">WHEEL</div>
   </div>
   <div class="header-actions">
+    <a href="index.html" class="chip-btn" style="text-decoration:none;display:inline-flex;align-items:center;" title="Return to Launch Hub">HUB</a>
     <button class="chip-btn active" id="btn-autocenter" title="Toggle Auto Return to Center Spring">SPRING: ON</button>
     <button class="chip-btn" id="btn-gyro" title="Toggle Phone Gyroscope / Tilt Steering">GYRO: OFF</button>
     <button class="chip-btn" id="btn-audio" title="Audio Alert & Mechanical Clicks">AUDIO: ON</button>
@@ -573,15 +574,74 @@
     bc = new BroadcastChannel('spatialdrive');
   } catch (_) {}
 
-  const ROOM_CODE = 'SPATIAL-77';
-  let mqttClient = null;
-  try {
-    mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
-      clientId: 'ctrl_' + Math.random().toString(16).slice(2, 8),
-      keepalive: 30,
-      reconnectPeriod: 2000
+  const urlParams = new URLSearchParams(window.location.search);
+  let ROOM_CODE = (urlParams.get('room') || 'SPATIAL-77').toUpperCase().trim();
+
+  const connDot = document.getElementById('conn-dot');
+  const connText = document.getElementById('conn-text');
+  const roomDisplay = document.getElementById('room-display');
+
+  function updateRoomUI() {
+    if (roomDisplay) {
+      roomDisplay.textContent = `ROOM: ${ROOM_CODE}`;
+      roomDisplay.style.cursor = 'pointer';
+      roomDisplay.title = 'Click to switch room code';
+    }
+  }
+  updateRoomUI();
+
+  if (roomDisplay) {
+    roomDisplay.addEventListener('click', () => {
+      const nextRoom = prompt('Enter Room Code to pair with HUD:', ROOM_CODE);
+      if (nextRoom && nextRoom.trim()) {
+        ROOM_CODE = nextRoom.toUpperCase().trim();
+        updateRoomUI();
+        initMqttController();
+      }
     });
-  } catch (_) {}
+  }
+
+  let mqttClient = null;
+  function initMqttController() {
+    if (mqttClient) {
+      try { mqttClient.end(true); } catch (_) {}
+    }
+    if (connText) connText.textContent = `CONNECTING (${ROOM_CODE})...`;
+    try {
+      mqttClient = mqtt.connect('wss://broker.emqx.io:8084/mqtt', {
+        clientId: 'ctrl_' + Math.random().toString(16).slice(2, 8),
+        keepalive: 30,
+        reconnectPeriod: 2000
+      });
+
+      mqttClient.on('connect', () => {
+        if (connDot) {
+          connDot.style.background = '#00f0ff';
+          connDot.style.boxShadow = '0 0 8px #00f0ff';
+        }
+        if (connText) connText.textContent = `CLOUD SYNC (ROOM: ${ROOM_CODE})`;
+      });
+
+      mqttClient.on('error', () => {
+        if (connDot) {
+          connDot.style.background = '#ff0055';
+          connDot.style.boxShadow = '0 0 8px #ff0055';
+        }
+        if (connText) connText.textContent = 'CLOUD RECONNECTING...';
+      });
+
+      mqttClient.on('offline', () => {
+        if (connDot) {
+          connDot.style.background = '#ffaa00';
+          connDot.style.boxShadow = '0 0 8px #ffaa00';
+        }
+        if (connText) connText.textContent = 'CLOUD OFFLINE';
+      });
+    } catch (_) {
+      if (connText) connText.textContent = 'LOCAL BROADCAST ONLY';
+    }
+  }
+  initMqttController();
 
   function transmit() {
     const payload = { angle: Number(steerAngle.toFixed(1)), distance: distanceCm };
